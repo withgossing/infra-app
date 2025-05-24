@@ -1,0 +1,49 @@
+# Grafana 시각화 대시보드 서비스
+version: '3.8'
+
+networks:
+  meritz-network:
+    external: true
+
+volumes:
+  grafana_data:
+
+services:
+  # Grafana (시각화 대시보드)
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: meritz-grafana
+    restart: unless-stopped
+    ports:
+      - "10002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
+      - GF_SERVER_ROOT_URL=https://grafana.meritz.com
+      - GF_SERVER_DOMAIN=grafana.meritz.com
+      - TZ=Asia/Seoul
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning
+      - ./dashboards:/var/lib/grafana/dashboards
+    networks:
+      - meritz-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.meritz.com`)"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - prometheus
+    external_links:
+      - meritz-prometheus:prometheus
+      - meritz-loki:loki
+      - meritz-jaeger:jaeger

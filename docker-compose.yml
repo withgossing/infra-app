@@ -1,0 +1,65 @@
+# Meritz 전체 인프라 관리
+# 모든 서비스를 한번에 시작/중지할 수 있는 마스터 Compose 파일
+
+version: '3.8'
+
+networks:
+  meritz-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+services:
+  # Gateway (Traefik)
+  traefik:
+    extends:
+      file: ./gateway/docker-compose.yml
+      service: traefik
+
+  # Default Service
+  default-app:
+    extends:
+      file: ./gateway/docker-compose.yml
+      service: default-app
+
+  # Monitoring Stack
+  prometheus:
+    extends:
+      file: ./prometheus/docker-compose.yml
+      service: prometheus
+
+  grafana:
+    extends:
+      file: ./grafana/docker-compose.yml
+      service: grafana
+
+  loki:
+    extends:
+      file: ./loki/docker-compose.yml
+      service: loki
+
+  promtail:
+    extends:
+      file: ./promtail/docker-compose.yml
+      service: promtail
+
+  jaeger:
+    extends:
+      file: ./jaeger/docker-compose.yml
+      service: jaeger
+
+  uptime-kuma:
+    extends:
+      file: ./uptime-kuma/docker-compose.yml
+      service: uptime-kuma
+
+  node-exporter:
+    extends:
+      file: ./node-exporter/docker-compose.yml
+      service: node-exporter
+
+  cadvisor:
+    extends:
+      file: ./cadvisor/docker-compose.yml
+      service: cadvisor

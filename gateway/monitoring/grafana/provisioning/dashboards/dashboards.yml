@@ -1,0 +1,57 @@
+# Grafana 대시보드 프로비저닝 설정
+apiVersion: 1
+
+providers:
+  # 기본 대시보드 폴더
+  - name: 'default'
+    orgId: 1
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+
+  # Traefik 모니터링 대시보드
+  - name: 'traefik'
+    orgId: 1
+    folder: 'Traefik'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/traefik
+
+  # 시스템 모니터링 대시보드
+  - name: 'system'
+    orgId: 1
+    folder: 'System'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/system
+
+  # 어플리케이션 모니터링 대시보드
+  - name: 'applications'
+    orgId: 1
+    folder: 'Applications'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/applications
+
+  # 로그 분석 대시보드
+  - name: 'logs'
+    orgId: 1
+    folder: 'Logs'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/logs

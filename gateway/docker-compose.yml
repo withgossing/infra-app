@@ -1,0 +1,58 @@
+# Meritz Gateway Infrastructure
+# Traefik Gateway + 기본 서비스
+
+version: '3.8'
+
+networks:
+  meritz-network:
+    external: true
+
+services:
+  # Traefik Gateway (포트 1000)
+  traefik:
+    image: traefik:v3.0
+    container_name: meritz-traefik
+    restart: unless-stopped
+    command:
+      - --configFile=/config/traefik.yml
+    ports:
+      - "80:80"      # HTTP (리다이렉트)
+      - "443:443"    # HTTPS
+      - "10000:8080"  # Traefik 대시보드
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/config:/config:ro
+      - ./traefik/ssl:/ssl
+      - ./traefik/logs:/logs
+    networks:
+      - meritz-network
+    environment:
+      - TZ=Asia/Seoul
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.meritz.com`)"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=8080"
+      - "traefik.http.routers.dashboard.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=admin:$$2y$$10$$2b2cu2Fw10/ZfDdQh2hkS.uY2WM4jhP6K6K9b6OOFqI7OOgHv7hhu"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 기본 서비스 (404 페이지)
+  default-app:
+    image: nginx:alpine
+    container_name: meritz-default
+    restart: unless-stopped
+    volumes:
+      - ./default-pages:/usr/share/nginx/html:ro
+    networks:
+      - meritz-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.default.rule=HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.meritz.com`)"
+      - "traefik.http.routers.default.tls.certresolver=letsencrypt"
+      - "traefik.http.services.default.loadbalancer.server.port=80"
+      - "traefik.http.routers.default.priority=1"

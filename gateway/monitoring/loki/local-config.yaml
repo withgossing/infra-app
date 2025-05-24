@@ -1,0 +1,73 @@
+# Loki 로그 수집 시스템 설정
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 24h
+
+ruler:
+  alertmanager_url: http://localhost:9093
+
+# 로그 보존 기간 설정
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 720h  # 30일
+
+# 압축 설정
+compactor:
+  working_directory: /loki/boltdb-shipper-compactor
+  shared_store: filesystem
+
+# 로그 라인 제한
+limits_config:
+  enforce_metric_name: false
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  ingestion_rate_mb: 4
+  ingestion_burst_size_mb: 6
+  max_line_size: 0
+  max_query_series: 100000
+  max_query_parallelism: 32
+  max_entries_limit_per_query: 5000
+  max_label_value_length: 4096
+  max_label_name_length: 1024
+  max_label_names_per_series: 30
+  max_streams_per_user: 10000
+  max_global_streams_per_user: 5000
+
+# 청크 설정
+chunk_store_config:
+  max_look_back_period: 0s
+
+# 분석 설정
+analytics:
+  reporting_enabled: false

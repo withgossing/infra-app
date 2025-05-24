@@ -1,0 +1,47 @@
+# Prometheus 모니터링 서비스
+version: '3.8'
+
+networks:
+  meritz-network:
+    external: true
+
+volumes:
+  prometheus_data:
+
+services:
+  # Prometheus (메트릭 수집)
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: meritz-prometheus
+    restart: unless-stopped
+    ports:
+      - "10001:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.external-url=https://prometheus.meritz.com'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./config:/etc/prometheus
+      - prometheus_data:/prometheus
+    networks:
+      - meritz-network
+    environment:
+      - TZ=Asia/Seoul
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.meritz.com`)"
+      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      - "traefik.http.routers.prometheus.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=admin:$$2y$$10$$2b2cu2Fw10/ZfDdQh2hkS.uY2WM4jhP6K6K9b6OOFqI7OOgHv7hhu"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

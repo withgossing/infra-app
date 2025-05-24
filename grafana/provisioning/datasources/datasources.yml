@@ -1,0 +1,81 @@
+# Grafana 데이터소스 설정
+apiVersion: 1
+
+datasources:
+  # Prometheus 데이터소스
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://meritz-prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      prometheusType: Prometheus
+      prometheusVersion: 2.47.0
+      cacheLevel: 'High'
+      disableMetricsLookup: false
+      incrementalQuerying: false
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: jaeger
+          url: 'http://meritz-jaeger:16686/trace/$$${__value.raw}'
+
+  # Loki 데이터소스 (로그)
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://meritz-loki:3100
+    editable: true
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - datasourceUid: jaeger
+          matcherRegex: "trace_id=(\\w+)"
+          name: TraceID
+          url: 'http://meritz-jaeger:16686/trace/$${__value.raw}'
+
+  # Jaeger 데이터소스 (트레이싱)
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://meritz-jaeger:16686
+    editable: true
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: 'loki'
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        tags: ['job', 'instance', 'pod', 'namespace']
+        filterByTraceID: false
+        filterBySpanID: false
+        customQuery: true
+        query: 'method="$${__span.tags.method}"'
+      tracesToMetrics:
+        datasourceUid: 'prometheus'
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+        queries:
+          - name: 'Sample query'
+            query: 'sum(rate(traces_spanmetrics_latency_bucket{$$__tags}[5m]))'
+      serviceMap:
+        datasourceUid: 'prometheus'
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      spanBar:
+        type: 'Tag'
+        tag: 'http.path'
+
+  # TestData 데이터소스 (개발/테스트용)
+  - name: TestData
+    type: testdata
+    uid: testdata
+    access: proxy
+    editable: true
+    jsonData: {}
