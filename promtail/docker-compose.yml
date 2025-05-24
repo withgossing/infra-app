@@ -1,5 +1,4 @@
 # Promtail 로그 에이전트 서비스
-version: '3.8'
 
 networks:
   meritz-network:
@@ -21,7 +20,6 @@ services:
       - meritz-network
     environment:
       - TZ=Asia/Seoul
-    depends_on:
-      - loki
+
     external_links:
       - meritz-loki:loki

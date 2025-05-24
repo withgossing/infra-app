@@ -93,25 +93,26 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep meritz
 echo ""
 echo "🔍 헬스체크 수행 중..."
 
-# 기본 헬스체크
+# 개선된 헬스체크 (서비스별 엔드포인트 사용)
 HEALTH_CHECKS=(
-    "traefik:10000"
-    "prometheus:10001"
-    "grafana:10002"
-    "loki:10003"
-    "jaeger:10004"
-    "node-exporter:10006"
-    "cadvisor:10007"
-    "uptime-kuma:10008"
+    "traefik:10000:/api/overview"
+    "prometheus:10001/-/healthy"
+    "grafana:10002/api/health"
+    "loki:10003/ready"
+    "jaeger:10004/"
+    "node-exporter:10006/metrics"
+    "cadvisor:10007/metrics"
+    "uptime-kuma:10008/"
 )
 
 HEALTHY_SERVICES=0
 TOTAL_SERVICES=${#HEALTH_CHECKS[@]}
 
 for check in "${HEALTH_CHECKS[@]}"; do
-    IFS=':' read -r service port <<< "$check"
+    IFS=':' read -r service port endpoint <<< "$check"
+    url="http://localhost:${port}${endpoint}"
     
-    if curl -f -s "http://localhost:${port}" > /dev/null 2>&1; then
+    if curl -f -s "${url}" > /dev/null 2>&1; then
         echo -e "✅ ${service} (포트 ${port}): ${GREEN}정상${NC}"
         ((HEALTHY_SERVICES++))
     else

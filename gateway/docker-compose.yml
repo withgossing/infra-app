@@ -1,8 +1,6 @@
 # Meritz Gateway Infrastructure
 # Traefik Gateway + 기본 서비스
 
-version: '3.8'
-
 networks:
   meritz-network:
     external: true

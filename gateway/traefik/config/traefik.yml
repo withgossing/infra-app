@@ -10,7 +10,7 @@ global:
 api:
   dashboard: true
   debug: false
-  insecure: false
+  insecure: true  # 로컬 개발환경에서 대시보드 접근 허용
 
 # 엔트리포인트 설정 (HTTP/HTTPS)
 entryPoints:
@@ -87,7 +87,7 @@ metrics:
 
 # 핑 설정 (헬스체크)
 ping:
-  entryPoint: traefik
+  entryPoint: web
 
 # 서버 전송 설정
 serversTransport:

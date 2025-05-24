@@ -1,5 +1,4 @@
 # Uptime Kuma 가용성 모니터링 서비스
-version: '3.8'
 
 networks:
   meritz-network:

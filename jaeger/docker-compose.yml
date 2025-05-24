@@ -1,5 +1,4 @@
 # Jaeger 분산 트레이싱 서비스
-version: '3.8'
 
 networks:
   meritz-network:

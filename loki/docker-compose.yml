@@ -1,5 +1,4 @@
 # Loki 로그 수집 서비스
-version: '3.8'
 
 networks:
   meritz-network:

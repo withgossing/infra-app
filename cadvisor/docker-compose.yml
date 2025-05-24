@@ -1,5 +1,4 @@
 # cAdvisor 컨테이너 메트릭 수집 서비스
-version: '3.8'
 
 networks:
   meritz-network:

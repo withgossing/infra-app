@@ -1,5 +1,4 @@
 # Grafana 시각화 대시보드 서비스
-version: '3.8'
 
 networks:
   meritz-network:
@@ -41,8 +40,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    depends_on:
-      - prometheus
+
     external_links:
       - meritz-prometheus:prometheus
       - meritz-loki:loki
