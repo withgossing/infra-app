@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kong-system
+  labels:
+    name: kong-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kong-postgres-secret
+  namespace: kong-system
+type: Opaque
+data:
+  username: a29uZw==  # kong (base64)
+  password: a29uZ19wYXNzd29yZA==  # kong_password (base64)
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+  namespace: kong-system
+data:
+  # Kong 설정 파일
+  kong.conf: |
+    database = postgres
+    pg_host = postgres-service
+    pg_port = 5432
+    pg_user = kong
+    pg_password = kong_password
+    pg_database = kong
+    
+    # 리스너 설정
+    proxy_listen = 0.0.0.0:8000, 0.0.0.0:8443 ssl
+    admin_listen = 0.0.0.0:8001, 0.0.0.0:8444 ssl
+    
+    # 로깅 설정
+    proxy_access_log = /dev/stdout
+    admin_access_log = /dev/stdout
+    proxy_error_log = /dev/stderr
+    admin_error_log = /dev/stderr
+    
+    # 플러그인 설정
+    plugins = bundled
+    
+    # 보안 설정
+    trusted_ips = 0.0.0.0/0,::/0
+    real_ip_header = X-Forwarded-For
+    real_ip_recursive = on
+    
+    # 성능 설정
+    worker_processes = auto
+    nginx_worker_processes = auto

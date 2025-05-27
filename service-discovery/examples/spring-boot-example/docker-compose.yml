@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # Spring Boot 애플리케이션 (인스턴스 1)
+  app-1:
+    build: .
+    container_name: consul-app-1
+    hostname: consul-app-1
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SERVER_PORT=8080
+      - SPRING_APPLICATION_NAME=consul-discovery-example
+    ports:
+      - "8081:8080"
+    depends_on:
+      - consul-server-1
+    networks:
+      - consul-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Spring Boot 애플리케이션 (인스턴스 2)
+  app-2:
+    build: .
+    container_name: consul-app-2
+    hostname: consul-app-2
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SERVER_PORT=8080
+      - SPRING_APPLICATION_NAME=consul-discovery-example
+    ports:
+      - "8082:8080"
+    depends_on:
+      - consul-server-1
+    networks:
+      - consul-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # 다른 예제 서비스 (API Gateway 역할)
+  gateway:
+    build: .
+    container_name: consul-gateway
+    hostname: consul-gateway
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SERVER_PORT=8080
+      - SPRING_APPLICATION_NAME=api-gateway
+    ports:
+      - "8083:8080"
+    depends_on:
+      - consul-server-1
+    networks:
+      - consul-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  consul-network:
+    external: true

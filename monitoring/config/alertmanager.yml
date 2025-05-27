@@ -1,0 +1,197 @@
+global:
+  # SMTP 서버 설정 (이메일 알림용)
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alertmanager@company.com'
+  smtp_auth_username: 'alertmanager@company.com'
+  smtp_auth_password: 'your_email_password'
+  smtp_require_tls: true
+
+# 알림 경로 설정
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'default-receiver'
+  routes:
+    # 중요한 알림은 즉시 전송
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 5s
+      repeat_interval: 30m
+      
+    # 경고 알림은 그룹화해서 전송
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 2h
+      
+    # 인프라 관련 알림
+    - match:
+        category: infrastructure
+      receiver: 'infrastructure-team'
+      
+    # 애플리케이션 관련 알림
+    - match:
+        category: application
+      receiver: 'dev-team'
+      
+    # 데이터베이스 관련 알림
+    - match:
+        category: database
+      receiver: 'dba-team'
+      
+    # 모니터링 시스템 알림
+    - match:
+        category: monitoring
+      receiver: 'monitoring-team'
+
+# 알림 억제 규칙
+inhibit_rules:
+  # 인스턴스가 다운되면 해당 인스턴스의 다른 알림들은 억제
+  - source_match:
+      alertname: 'InstanceDown'
+    target_match_re:
+      instance: '.*'
+    equal: ['instance']
+    
+  # 높은 심각도 알림이 있으면 낮은 심각도 알림은 억제
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+# 수신자 설정
+receivers:
+  # 기본 수신자
+  - name: 'default-receiver'
+    email_configs:
+      - to: 'admin@company.com'
+        subject: '[Alert] {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          알림: {{ .Annotations.summary }}
+          상세: {{ .Annotations.description }}
+          시간: {{ .StartsAt }}
+          라벨: {{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}
+          {{ end }}
+
+  # 중요한 알림 수신자 (SMS, 전화 등 추가 가능)
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'admin@company.com, oncall@company.com'
+        subject: '[CRITICAL] {{ .GroupLabels.alertname }}'
+        body: |
+          🚨 중요한 알림이 발생했습니다!
+          
+          {{ range .Alerts }}
+          알림: {{ .Annotations.summary }}
+          상세: {{ .Annotations.description }}
+          시간: {{ .StartsAt }}
+          라벨: {{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}
+          {{ end }}
+          
+          즉시 확인이 필요합니다.
+    # Slack 알림 (선택사항)
+    # slack_configs:
+    #   - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+    #     channel: '#alerts-critical'
+    #     title: '[CRITICAL] {{ .GroupLabels.alertname }}'
+    #     text: |
+    #       {{ range .Alerts }}
+    #       알림: {{ .Annotations.summary }}
+    #       상세: {{ .Annotations.description }}
+    #       {{ end }}
+
+  # 경고 알림 수신자
+  - name: 'warning-alerts'
+    email_configs:
+      - to: 'team@company.com'
+        subject: '[WARNING] {{ .GroupLabels.alertname }}'
+        body: |
+          ⚠️ 경고 알림
+          
+          {{ range .Alerts }}
+          알림: {{ .Annotations.summary }}
+          상세: {{ .Annotations.description }}
+          시간: {{ .StartsAt }}
+          {{ end }}
+
+  # 인프라 팀 수신자
+  - name: 'infrastructure-team'
+    email_configs:
+      - to: 'infra-team@company.com'
+        subject: '[Infrastructure] {{ .GroupLabels.alertname }}'
+        body: |
+          🏗️ 인프라 관련 알림
+          
+          {{ range .Alerts }}
+          알림: {{ .Annotations.summary }}
+          상세: {{ .Annotations.description }}
+          인스턴스: {{ .Labels.instance }}
+          시간: {{ .StartsAt }}
+          {{ end }}
+
+  # 개발 팀 수신자
+  - name: 'dev-team'
+    email_configs:
+      - to: 'dev-team@company.com'
+        subject: '[Application] {{ .GroupLabels.alertname }}'
+        body: |
+          💻 애플리케이션 관련 알림
+          
+          {{ range .Alerts }}
+          알림: {{ .Annotations.summary }}
+          상세: {{ .Annotations.description }}
+          서비스: {{ .Labels.job }}
+          시간: {{ .StartsAt }}
+          {{ end }}
+
+  # DBA 팀 수신자
+  - name: 'dba-team'
+    email_configs:
+      - to: 'dba-team@company.com'
+        subject: '[Database] {{ .GroupLabels.alertname }}'
+        body: |
+          🗄️ 데이터베이스 관련 알림
+          
+          {{ range .Alerts }}
+          알림: {{ .Annotations.summary }}
+          상세: {{ .Annotations.description }}
+          데이터베이스: {{ .Labels.instance }}
+          시간: {{ .StartsAt }}
+          {{ end }}
+
+  # 모니터링 팀 수신자
+  - name: 'monitoring-team'
+    email_configs:
+      - to: 'monitoring-team@company.com'
+        subject: '[Monitoring] {{ .GroupLabels.alertname }}'
+        body: |
+          📊 모니터링 시스템 관련 알림
+          
+          {{ range .Alerts }}
+          알림: {{ .Annotations.summary }}
+          상세: {{ .Annotations.description }}
+          시간: {{ .StartsAt }}
+          {{ end }}
+
+# 웹훅 예시 (선택사항)
+# - name: 'webhook-receiver'
+#   webhook_configs:
+#     - url: 'http://your-webhook-endpoint.com/webhook'
+#       send_resolved: true
+
+# PagerDuty 예시 (선택사항)
+# - name: 'pagerduty-receiver'
+#   pagerduty_configs:
+#     - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+#       description: '{{ .GroupLabels.alertname }}'
+
+# 템플릿 설정 (선택사항)
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'

@@ -1,0 +1,15 @@
+# 파이프라인 설정
+- pipeline.id: main
+  path.config: "/usr/share/logstash/pipeline/main.conf"
+  pipeline.workers: 2
+  pipeline.batch.size: 125
+
+- pipeline.id: beats
+  path.config: "/usr/share/logstash/pipeline/beats.conf"
+  pipeline.workers: 2
+  pipeline.batch.size: 125
+
+- pipeline.id: application
+  path.config: "/usr/share/logstash/pipeline/application.conf"
+  pipeline.workers: 2
+  pipeline.batch.size: 125

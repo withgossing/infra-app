@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dns-system
+  labels:
+    name: dns-system
+    purpose: dns-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-config
+  namespace: dns-system
+  labels:
+    app: coredns
+data:
+  Corefile: |
+    # CoreDNS 메인 설정
+    . {
+        # 에러 로깅
+        errors
+        
+        # 헬스체크 엔드포인트
+        health {
+            lameduck 5s
+        }
+        
+        # 프로메테우스 메트릭
+        prometheus :9153
+        
+        # 로그
+        log
+        
+        # 캐시 (30초 TTL)
+        cache 30
+        
+        # 로드밸런싱 (라운드로빈)
+        loadbalance
+        
+        # 외부 DNS 서버로 포워딩
+        forward . 8.8.8.8 8.8.4.4 {
+            prefer_udp
+        }
+    }
+
+    # 내부 도메인 처리 (.local)
+    local {
+        errors
+        file /etc/coredns/custom-domains.db
+        log
+    }
+
+    # 개발 환경 도메인 처리 (.dev)
+    dev {
+        errors
+        file /etc/coredns/dev-domains.db
+        log
+    }
+
+    # 클러스터 도메인 (.cluster.local)
+    cluster.local {
+        errors
+        kubernetes {
+            pods insecure
+            fallthrough in-addr.arpa ip6.arpa
+        }
+        log
+    }
+  
+  custom-domains.db: |
+    $ORIGIN local.
+    $TTL 300
+
+    ; SOA 레코드
+    @   IN  SOA dns.local. admin.local. (
+        2024052701  ; Serial
+        3600        ; Refresh
+        1800        ; Retry
+        604800      ; Expire
+        300         ; Minimum TTL
+    )
+
+    ; NS 레코드
+    @   IN  NS  dns.local.
+
+    ; DNS 서버
+    dns                IN  A   10.20.0.10
+
+    ; 캐시 서비스 (Redis)
+    redis-master       IN  A   10.20.1.10
+    redis-replica-1    IN  A   10.20.1.11
+    redis-replica-2    IN  A   10.20.1.12
+
+    ; 게이트웨이 서비스 (Kong)
+    api-gateway        IN  A   10.20.2.10
+    gateway-db         IN  A   10.20.2.11
+
+    ; 모니터링 서비스
+    prometheus         IN  A   10.20.3.10
+    grafana           IN  A   10.20.3.11
+    alertmanager      IN  A   10.20.3.12
+
+  dev-domains.db: |
+    $ORIGIN dev.
+    $TTL 300
+
+    ; SOA 레코드
+    @   IN  SOA dns.dev. admin.dev. (
+        2024052701  ; Serial
+        3600        ; Refresh
+        1800        ; Retry
+        604800      ; Expire
+        300         ; Minimum TTL
+    )
+
+    ; NS 레코드
+    @   IN  NS  dns.dev.
+
+    ; 애플리케이션 서비스
+    bank-app          IN  A   10.20.10.10
+    sec-app           IN  A   10.20.10.20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coredns-metrics
+  namespace: dns-system
+  labels:
+    app: coredns
+    component: metrics
+spec:
+  selector:
+    app: coredns
+  ports:
+  - name: metrics
+    port: 9153
+    targetPort: 9153
+    protocol: TCP
+  type: ClusterIP

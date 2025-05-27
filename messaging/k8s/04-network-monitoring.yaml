@@ -1,0 +1,316 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka-network-policy
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Kafka 브로커 간 통신
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: kafka
+          app.kubernetes.io/component: broker
+    ports:
+    - protocol: TCP
+      port: 9092  # Kafka
+    - protocol: TCP
+      port: 29093  # Controller
+  # Kafka UI에서 브로커로의 접근
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: kafka-ui
+    ports:
+    - protocol: TCP
+      port: 9092
+  # Schema Registry에서 브로커로의 접근
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: schema-registry
+    ports:
+    - protocol: TCP
+      port: 9092
+  # Kafka Connect에서 브로커로의 접근
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: kafka-connect
+    ports:
+    - protocol: TCP
+      port: 9092
+  # 외부에서 Kafka로의 접근 (LoadBalancer 서비스)
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 9092
+  # JMX 메트릭 (Prometheus)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9308
+  egress:
+  # DNS 조회
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Kafka 브로커 간 통신
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: kafka
+          app.kubernetes.io/component: broker
+    ports:
+    - protocol: TCP
+      port: 9092
+    - protocol: TCP
+      port: 29093
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka-ui-network-policy
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka-ui
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-ui
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # 외부에서 UI로의 접근
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  # DNS 조회
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Kafka 브로커로의 접근
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: kafka
+          app.kubernetes.io/component: broker
+    ports:
+    - protocol: TCP
+      port: 9092
+  # Schema Registry로의 접근
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: schema-registry
+    ports:
+    - protocol: TCP
+      port: 8081
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-setup
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: setup
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+        app.kubernetes.io/component: setup
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: kafka-setup
+        image: apache/kafka:2.13-3.8.1
+        command: ["/bin/bash"]
+        args:
+        - -c
+        - |
+          echo "Kafka 클러스터 설정 대기 중..."
+          sleep 60
+          
+          BOOTSTRAP_SERVERS="kafka-headless.messaging.svc.cluster.local:9092"
+          
+          # 클러스터 상태 확인
+          echo "=== 클러스터 상태 확인 ==="
+          kafka-broker-api-versions.sh --bootstrap-server $BOOTSTRAP_SERVERS
+          
+          # 브로커 목록 확인
+          echo "=== 브로커 목록 ==="
+          kafka-metadata-shell.sh --snapshot /var/lib/kafka/data/__cluster_metadata-0/00000000000000000000.log --print brokers
+          
+          # 기본 토픽 생성
+          echo "=== 기본 토픽 생성 ==="
+          
+          # 테스트 토픽
+          kafka-topics.sh --create \
+            --bootstrap-server $BOOTSTRAP_SERVERS \
+            --topic test-topic \
+            --partitions 3 \
+            --replication-factor 3 \
+            --if-not-exists
+          
+          # 이벤트 토픽
+          kafka-topics.sh --create \
+            --bootstrap-server $BOOTSTRAP_SERVERS \
+            --topic events \
+            --partitions 6 \
+            --replication-factor 3 \
+            --if-not-exists
+          
+          # 로그 토픽 (1주일 보존)
+          kafka-topics.sh --create \
+            --bootstrap-server $BOOTSTRAP_SERVERS \
+            --topic application-logs \
+            --partitions 3 \
+            --replication-factor 3 \
+            --config retention.ms=604800000 \
+            --if-not-exists
+          
+          # 메트릭 토픽
+          kafka-topics.sh --create \
+            --bootstrap-server $BOOTSTRAP_SERVERS \
+            --topic metrics \
+            --partitions 3 \
+            --replication-factor 3 \
+            --config retention.ms=259200000 \
+            --if-not-exists
+          
+          echo "=== 생성된 토픽 목록 ==="
+          kafka-topics.sh --list --bootstrap-server $BOOTSTRAP_SERVERS
+          
+          echo "=== 토픽 상세 정보 ==="
+          kafka-topics.sh --describe --bootstrap-server $BOOTSTRAP_SERVERS
+          
+          echo "=== Kafka 클러스터 설정 완료! ==="
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-performance-test
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: test
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+        app.kubernetes.io/component: test
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: kafka-test
+        image: apache/kafka:2.13-3.8.1
+        command: ["/bin/bash"]
+        args:
+        - -c
+        - |
+          echo "Kafka 성능 테스트 시작..."
+          sleep 90  # 클러스터 완전 초기화 대기
+          
+          BOOTSTRAP_SERVERS="kafka-headless.messaging.svc.cluster.local:9092"
+          
+          # 성능 테스트 토픽 생성
+          kafka-topics.sh --create \
+            --bootstrap-server $BOOTSTRAP_SERVERS \
+            --topic performance-test \
+            --partitions 6 \
+            --replication-factor 3 \
+            --if-not-exists
+          
+          echo "=== Producer 성능 테스트 ==="
+          kafka-producer-perf-test.sh \
+            --topic performance-test \
+            --num-records 10000 \
+            --record-size 1024 \
+            --throughput 1000 \
+            --producer-props bootstrap.servers=$BOOTSTRAP_SERVERS
+          
+          echo "=== Consumer 성능 테스트 ==="
+          timeout 30s kafka-consumer-perf-test.sh \
+            --topic performance-test \
+            --messages 10000 \
+            --bootstrap-server $BOOTSTRAP_SERVERS || true
+          
+          echo "=== 성능 테스트 완료 ==="
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-monitoring-config
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: monitoring
+data:
+  prometheus-rules.yaml: |
+    groups:
+    - name: kafka
+      rules:
+      - alert: KafkaBrokerDown
+        expr: up{job="kafka"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka broker is down"
+          description: "Kafka broker {{ $labels.instance }} has been down for more than 1 minute."
+      
+      - alert: KafkaTopicOfflinePartitions
+        expr: kafka_controller_offline_partitions_count > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka has offline partitions"
+          description: "Kafka cluster has {{ $value }} offline partitions."
+      
+      - alert: KafkaConsumerLag
+        expr: kafka_consumer_lag_sum > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High consumer lag detected"
+          description: "Consumer group {{ $labels.consumergroup }} has lag of {{ $value }} messages."
+      
+      - alert: KafkaDiskUsage
+        expr: (kafka_log_size / kafka_log_dir_size) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka disk usage is high"
+          description: "Kafka broker {{ $labels.instance }} disk usage is {{ $value }}%."

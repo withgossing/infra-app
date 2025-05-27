@@ -1,0 +1,99 @@
+spring:
+  application:
+    name: consul-discovery-example
+  
+  # Consul 설정
+  cloud:
+    consul:
+      # Consul 서버 연결 정보
+      host: localhost
+      port: 10500
+      scheme: http
+      
+      # 서비스 디스커버리 설정
+      discovery:
+        enabled: true
+        register: true
+        deregister: true
+        prefer-ip-address: true
+        instance-id: ${spring.application.name}-${random.uuid}
+        service-name: ${spring.application.name}
+        health-check-path: /actuator/health
+        health-check-interval: 10s
+        health-check-timeout: 3s
+        health-check-critical-timeout: 30s
+        tags:
+          - version=1.0.0
+          - environment=development
+          - framework=spring-boot
+        metadata:
+          version: "1.0.0"
+          framework: "spring-boot"
+          
+      # 설정 관리
+      config:
+        enabled: true
+        prefix: config
+        default-context: application
+        profile-separator: ','
+        format: YAML
+        data-key: data
+        watch:
+          enabled: true
+          delay: 1000
+
+  # 로드밸런서 설정
+  cloud:
+    loadbalancer:
+      ribbon:
+        enabled: false
+
+# 서버 설정
+server:
+  port: 8080
+
+# Actuator 설정 (헬스체크용)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,consul
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    consul:
+      enabled: true
+
+# 로깅 설정
+logging:
+  level:
+    org.springframework.cloud.consul: DEBUG
+    org.springframework.cloud.discovery: DEBUG
+    com.ecwid.consul: DEBUG
+  pattern:
+    console: '%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'
+
+---
+# Docker Compose 환경용 설정
+spring:
+  config:
+    activate:
+      on-profile: docker
+  cloud:
+    consul:
+      host: consul-server-1
+      port: 8500
+
+---
+# Kubernetes 환경용 설정
+spring:
+  config:
+    activate:
+      on-profile: kubernetes
+  cloud:
+    consul:
+      host: consul-server.consul.svc.cluster.local
+      port: 8500

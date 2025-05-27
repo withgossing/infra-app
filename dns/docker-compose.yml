@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  coredns:
+    image: coredns/coredns:1.11.1
+    container_name: coredns
+    restart: unless-stopped
+    ports:
+      - "10600:53/udp"     # DNS 쿼리 (UDP)
+      - "10600:53/tcp"     # DNS 쿼리 (TCP)
+      - "10601:9153"       # 메트릭 및 헬스체크
+    volumes:
+      - ./config/Corefile:/etc/coredns/Corefile:ro
+      - ./config/custom-domains.db:/etc/coredns/custom-domains.db:ro
+      - ./config/dev-domains.db:/etc/coredns/dev-domains.db:ro
+      - coredns-data:/data
+    command: ["-conf", "/etc/coredns/Corefile"]
+    networks:
+      - dns-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9153/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=false"
+      - "description=CoreDNS 서비스"
+      - "service.type=dns"
+      - "service.version=1.11.1"
+
+  # DNS 테스트용 컨테이너
+  dns-test:
+    image: busybox:1.36
+    container_name: dns-test
+    restart: "no"
+    networks:
+      - dns-network
+    depends_on:
+      - coredns
+    dns:
+      - coredns
+    command: |
+      sh -c "
+        echo 'DNS 테스트 시작...'
+        echo '1. 외부 도메인 테스트'
+        nslookup google.com coredns
+        echo '2. 내부 도메인 테스트'  
+        nslookup redis-master.local coredns
+        echo '3. 개발 도메인 테스트'
+        nslookup bank-app.dev coredns
+        echo 'DNS 테스트 완료!'
+        sleep 3600
+      "
+
+volumes:
+  coredns-data:
+    driver: local
+    labels:
+      - "description=CoreDNS 데이터 볼륨"
+
+networks:
+  dns-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+    labels:
+      - "description=DNS 서비스 네트워크"
+
+# 환경 변수 설정
+x-common-environment: &common-env
+  TZ: Asia/Seoul
+  LANG: ko_KR.UTF-8

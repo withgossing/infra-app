@@ -1,0 +1,229 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: consul-network-policy
+  namespace: consul
+  labels:
+    app.kubernetes.io/name: consul
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: consul
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Consul Server 간 통신
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: consul
+          app.kubernetes.io/component: server
+    ports:
+    - protocol: TCP
+      port: 8300  # Server RPC
+    - protocol: TCP
+      port: 8301  # Serf LAN
+    - protocol: UDP
+      port: 8301
+    - protocol: TCP
+      port: 8302  # Serf WAN
+    - protocol: UDP
+      port: 8302
+  # Consul Client에서 Server로의 접근
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: consul
+          app.kubernetes.io/component: client
+    ports:
+    - protocol: TCP
+      port: 8300
+    - protocol: TCP
+      port: 8301
+    - protocol: UDP
+      port: 8301
+  # HTTP API 접근 (모든 네임스페이스)
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 8500  # HTTP API + UI
+    - protocol: TCP
+      port: 8502  # gRPC
+    - protocol: TCP
+      port: 8503  # gRPC TLS
+  # DNS 접근 (모든 네임스페이스)
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 8600  # DNS
+    - protocol: UDP
+      port: 8600
+  egress:
+  # 모든 아웃바운드 트래픽 허용 (서비스 디스커버리 특성상)
+  - {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: consul-dns
+  namespace: consul
+  labels:
+    app.kubernetes.io/name: consul
+    app.kubernetes.io/component: dns
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: consul
+    app.kubernetes.io/component: server
+  ports:
+    - name: dns-tcp
+      port: 53
+      targetPort: 8600
+      protocol: TCP
+    - name: dns-udp
+      port: 53
+      targetPort: 8600
+      protocol: UDP
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: consul-scripts
+  namespace: consul
+  labels:
+    app.kubernetes.io/name: consul
+    app.kubernetes.io/component: scripts
+data:
+  register-service.sh: |
+    #!/bin/bash
+    set -e
+    
+    # 서비스 등록 예제 스크립트
+    SERVICE_NAME=${1:-"example-service"}
+    SERVICE_PORT=${2:-"8080"}
+    SERVICE_ADDRESS=${3:-"example-service.default.svc.cluster.local"}
+    CONSUL_URL=${4:-"http://consul-server.consul.svc.cluster.local:8500"}
+    
+    echo "Registering service: $SERVICE_NAME"
+    echo "Address: $SERVICE_ADDRESS"
+    echo "Port: $SERVICE_PORT"
+    echo "Consul URL: $CONSUL_URL"
+    
+    curl -X PUT "$CONSUL_URL/v1/agent/service/register" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"ID\": \"$SERVICE_NAME-$(date +%s)\",
+        \"Name\": \"$SERVICE_NAME\",
+        \"Tags\": [\"kubernetes\", \"auto-registered\"],
+        \"Address\": \"$SERVICE_ADDRESS\",
+        \"Port\": $SERVICE_PORT,
+        \"Check\": {
+          \"HTTP\": \"http://$SERVICE_ADDRESS:$SERVICE_PORT/health\",
+          \"Interval\": \"10s\",
+          \"Timeout\": \"3s\"
+        }
+      }"
+    
+    echo ""
+    echo "Service registered successfully!"
+    
+  deregister-service.sh: |
+    #!/bin/bash
+    set -e
+    
+    # 서비스 등록 해제 예제 스크립트
+    SERVICE_ID=${1}
+    CONSUL_URL=${2:-"http://consul-server.consul.svc.cluster.local:8500"}
+    
+    if [ -z "$SERVICE_ID" ]; then
+      echo "Usage: $0 <service-id> [consul-url]"
+      exit 1
+    fi
+    
+    echo "Deregistering service: $SERVICE_ID"
+    echo "Consul URL: $CONSUL_URL"
+    
+    curl -X PUT "$CONSUL_URL/v1/agent/service/deregister/$SERVICE_ID"
+    
+    echo ""
+    echo "Service deregistered successfully!"
+    
+  health-check.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Consul 클러스터 상태 확인 스크립트
+    CONSUL_URL=${1:-"http://consul-server.consul.svc.cluster.local:8500"}
+    
+    echo "=== Consul 클러스터 상태 확인 ==="
+    echo "Consul URL: $CONSUL_URL"
+    echo ""
+    
+    echo "1. Leader 확인:"
+    curl -s "$CONSUL_URL/v1/status/leader" | jq -r .
+    echo ""
+    
+    echo "2. 클러스터 멤버 확인:"
+    curl -s "$CONSUL_URL/v1/agent/members" | jq -r '.[] | "\(.Name) - \(.Status) - \(.Addr)"'
+    echo ""
+    
+    echo "3. 등록된 서비스 확인:"
+    curl -s "$CONSUL_URL/v1/agent/services" | jq -r 'keys[]'
+    echo ""
+    
+    echo "4. 데이터센터 확인:"
+    curl -s "$CONSUL_URL/v1/catalog/datacenters" | jq -r .[]
+    echo ""
+    
+    echo "=== 상태 확인 완료 ==="
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: consul-health-check
+  namespace: consul
+  labels:
+    app.kubernetes.io/name: consul
+    app.kubernetes.io/component: health-check
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: consul
+        app.kubernetes.io/component: health-check
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: health-check
+        image: curlimages/curl:8.5.0
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "Waiting for Consul servers to be ready..."
+          sleep 30
+          
+          CONSUL_URL="http://consul-server.consul.svc.cluster.local:8500"
+          
+          echo "=== Consul 클러스터 상태 확인 ==="
+          echo "Consul URL: $CONSUL_URL"
+          echo ""
+          
+          echo "1. Leader 확인:"
+          curl -s "$CONSUL_URL/v1/status/leader"
+          echo ""
+          
+          echo "2. 클러스터 멤버 확인:"
+          curl -s "$CONSUL_URL/v1/agent/members" | head -20
+          echo ""
+          
+          echo "3. 데이터센터 확인:"
+          curl -s "$CONSUL_URL/v1/catalog/datacenters"
+          echo ""
+          
+          echo "=== Consul 클러스터가 정상적으로 동작 중입니다! ==="

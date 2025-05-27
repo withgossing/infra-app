@@ -1,0 +1,39 @@
+$ORIGIN dev.
+$TTL 300
+
+; SOA 레코드
+@   IN  SOA dns.dev. admin.dev. (
+    2024052701  ; Serial
+    3600        ; Refresh
+    1800        ; Retry
+    604800      ; Expire
+    300         ; Minimum TTL
+)
+
+; NS 레코드
+@   IN  NS  dns.dev.
+
+; DNS 서버
+dns                IN  A   127.0.0.1
+
+; 애플리케이션 서비스
+bank-app          IN  A   127.0.0.1
+bank-api          IN  A   127.0.0.1
+bank-web          IN  A   127.0.0.1
+
+sec-app           IN  A   127.0.0.1
+sec-api           IN  A   127.0.0.1
+sec-web           IN  A   127.0.0.1
+
+; 데이터베이스 서비스
+bank-db           IN  A   127.0.0.1
+sec-db            IN  A   127.0.0.1
+
+; 개발 도구
+mailhog           IN  A   127.0.0.1
+pgadmin           IN  A   127.0.0.1
+redis-cli         IN  A   127.0.0.1
+
+; 테스트 환경
+test-api          IN  A   127.0.0.1
+staging-api       IN  A   127.0.0.1

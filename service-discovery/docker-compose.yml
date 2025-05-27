@@ -1,0 +1,142 @@
+version: '3.8'
+
+services:
+  # Consul 서버 노드 1 (Bootstrap)
+  consul-server-1:
+    image: consul:1.18.1
+    container_name: consul-server-1
+    hostname: consul-server-1
+    restart: unless-stopped
+    ports:
+      - "10500:8500"  # HTTP API + UI
+      - "10600:8600/udp"  # DNS
+    volumes:
+      - consul-server-1-data:/consul/data
+      - ./config/consul-server.hcl:/consul/config/consul.hcl:ro
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+      - CONSUL_CLIENT_INTERFACE=eth0
+    command: >
+      consul agent
+      -config-file=/consul/config/consul.hcl
+      -bootstrap-expect=3
+      -retry-join=consul-server-2
+      -retry-join=consul-server-3
+      -client=0.0.0.0
+      -ui
+    networks:
+      - consul-network
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  # Consul 서버 노드 2
+  consul-server-2:
+    image: consul:1.18.1
+    container_name: consul-server-2
+    hostname: consul-server-2
+    restart: unless-stopped
+    volumes:
+      - consul-server-2-data:/consul/data
+      - ./config/consul-server.hcl:/consul/config/consul.hcl:ro
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+      - CONSUL_CLIENT_INTERFACE=eth0
+    command: >
+      consul agent
+      -config-file=/consul/config/consul.hcl
+      -bootstrap-expect=3
+      -retry-join=consul-server-1
+      -retry-join=consul-server-3
+      -client=0.0.0.0
+    networks:
+      - consul-network
+    depends_on:
+      - consul-server-1
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  # Consul 서버 노드 3
+  consul-server-3:
+    image: consul:1.18.1
+    container_name: consul-server-3
+    hostname: consul-server-3
+    restart: unless-stopped
+    volumes:
+      - consul-server-3-data:/consul/data
+      - ./config/consul-server.hcl:/consul/config/consul.hcl:ro
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+      - CONSUL_CLIENT_INTERFACE=eth0
+    command: >
+      consul agent
+      -config-file=/consul/config/consul.hcl
+      -bootstrap-expect=3
+      -retry-join=consul-server-1
+      -retry-join=consul-server-2
+      -client=0.0.0.0
+    networks:
+      - consul-network
+    depends_on:
+      - consul-server-1
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  # Consul 클라이언트 (애플리케이션용)
+  consul-client:
+    image: consul:1.18.1
+    container_name: consul-client
+    hostname: consul-client
+    restart: unless-stopped
+    ports:
+      - "10501:8500"  # 클라이언트 API 엔드포인트
+    volumes:
+      - ./config/consul-client.hcl:/consul/config/consul.hcl:ro
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+      - CONSUL_CLIENT_INTERFACE=eth0
+    command: >
+      consul agent
+      -config-file=/consul/config/consul.hcl
+      -retry-join=consul-server-1
+      -retry-join=consul-server-2
+      -retry-join=consul-server-3
+      -client=0.0.0.0
+    networks:
+      - consul-network
+    depends_on:
+      - consul-server-1
+      - consul-server-2
+      - consul-server-3
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  consul-server-1-data:
+    driver: local
+  consul-server-2-data:
+    driver: local
+  consul-server-3-data:
+    driver: local
+
+networks:
+  consul-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

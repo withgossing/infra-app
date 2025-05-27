@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: consul
+  labels:
+    name: consul
+    app.kubernetes.io/name: consul
+    app.kubernetes.io/component: service-discovery
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: consul-server-config
+  namespace: consul
+  labels:
+    app.kubernetes.io/name: consul
+    app.kubernetes.io/component: server
+data:
+  consul-server.hcl: |
+    datacenter = "dc1"
+    data_dir = "/consul/data"
+    log_level = "INFO"
+    node_name = "consul-server"
+    server = true
+    
+    bootstrap_expect = 3
+    retry_join = ["consul-server-0.consul-server.consul.svc.cluster.local",
+                  "consul-server-1.consul-server.consul.svc.cluster.local",
+                  "consul-server-2.consul-server.consul.svc.cluster.local"]
+    
+    bind_addr = "0.0.0.0"
+    client_addr = "0.0.0.0"
+    
+    ui_config {
+      enabled = true
+    }
+    
+    ports {
+      grpc = 8502
+      grpc_tls = 8503
+    }
+    
+    connect {
+      enabled = true
+    }
+    
+    performance {
+      raft_multiplier = 1
+    }
+    
+    enable_syslog = false
+    log_rotate_duration = "24h"
+    log_rotate_max_files = 7
+    
+    verify_incoming = false
+    verify_outgoing = false
+    verify_server_hostname = false
+    
+    acl = {
+      enabled = false
+      default_policy = "allow"
+      enable_token_persistence = true
+    }
+    
+    autopilot {
+      cleanup_dead_servers = true
+      last_contact_threshold = "200ms"
+      max_trailing_logs = 250
+      server_stabilization_time = "10s"
+    }
+    
+    check_update_interval = "5m"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: consul-client-config
+  namespace: consul
+  labels:
+    app.kubernetes.io/name: consul
+    app.kubernetes.io/component: client
+data:
+  consul-client.hcl: |
+    datacenter = "dc1"
+    data_dir = "/consul/data"
+    log_level = "INFO"
+    node_name = "consul-client"
+    server = false
+    
+    retry_join = ["consul-server.consul.svc.cluster.local"]
+    
+    bind_addr = "0.0.0.0"
+    client_addr = "0.0.0.0"
+    
+    ports {
+      grpc = 8502
+      grpc_tls = 8503
+    }
+    
+    connect {
+      enabled = true
+    }
+    
+    enable_syslog = false
+    log_rotate_duration = "24h"
+    log_rotate_max_files = 7
+    
+    verify_incoming = false
+    verify_outgoing = false
+    
+    acl = {
+      enabled = false
+      default_policy = "allow"
+      enable_token_persistence = true
+    }
+    
+    services {
+      name = "consul-client"
+      tags = ["client", "discovery"]
+      port = 8500
+      check {
+        http = "http://localhost:8500/v1/status/leader"
+        interval = "10s"
+        timeout = "3s"
+      }
+    }
+    
+    check_update_interval = "5m"

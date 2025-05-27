@@ -1,0 +1,168 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tracing
+  labels:
+    name: tracing
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jaeger-elasticsearch-config
+  namespace: tracing
+data:
+  elasticsearch.yml: |
+    cluster.name: "k8s-jaeger-cluster"
+    node.name: "${HOSTNAME}"
+    network.host: 0.0.0.0
+    http.port: 9200
+    transport.port: 9300
+    
+    discovery.seed_hosts: ["jaeger-elasticsearch-0.jaeger-elasticsearch-headless.tracing.svc.cluster.local"]
+    cluster.initial_master_nodes: ["jaeger-elasticsearch-0"]
+    
+    xpack.security.enabled: false
+    xpack.security.enrollment.enabled: false
+    xpack.security.http.ssl.enabled: false
+    xpack.security.transport.ssl.enabled: false
+    
+    bootstrap.memory_lock: true
+    indices.memory.index_buffer_size: 30%
+    
+    action.auto_create_index: "+jaeger-*"
+    action.destructive_requires_name: true
+    
+    thread_pool.write.queue_size: 2000
+    thread_pool.search.queue_size: 2000
+    search.max_buckets: 100000
+    indices.query.bool.max_clause_count: 10240
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jaeger-ui-config
+  namespace: tracing
+data:
+  ui-config.json: |
+    {
+      "dependencies": {
+        "dagMaxNumServices": 200,
+        "menuEnabled": true
+      },
+      "archiveEnabled": true,
+      "tracking": {
+        "gaID": "",
+        "trackErrors": true
+      },
+      "menu": [
+        {
+          "label": "About Jaeger",
+          "items": [
+            {
+              "label": "Documentation", 
+              "url": "https://www.jaegertracing.io/docs/latest"
+            },
+            {
+              "label": "GitHub",
+              "url": "https://github.com/jaegertracing/jaeger"
+            }
+          ]
+        }
+      ],
+      "search": {
+        "maxLookback": {
+          "label": "2 Days",
+          "value": "2d"
+        }
+      },
+      "linkPatterns": [
+        {
+          "type": "logs",
+          "key": "trace_id",
+          "url": "http://kibana.logging.svc.cluster.local:5601/app/discover#/?_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-1h,to:now))&_a=(query:(query_string:(analyze_wildcard:!t,query:'trace_id:#{trace_id}')))",
+          "text": "View trace logs"
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: tracing
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      jaeger:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:14250
+          thrift_http:
+            endpoint: 0.0.0.0:14268
+          thrift_compact:
+            endpoint: 0.0.0.0:6831
+          thrift_binary:
+            endpoint: 0.0.0.0:6832
+      zipkin:
+        endpoint: 0.0.0.0:9411
+    
+    processors:
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+      memory_limiter:
+        limit_mib: 512
+        spike_limit_mib: 128
+        check_interval: 5s
+      resourcedetection:
+        detectors: [env, system, k8sattributes]
+        timeout: 5s
+        override: false
+      attributes:
+        actions:
+          - key: environment
+            value: kubernetes
+            action: insert
+          - key: cluster
+            value: k8s-cluster
+            action: insert
+    
+    exporters:
+      jaeger:
+        endpoint: jaeger-collector:14250
+        tls:
+          insecure: true
+      logging:
+        loglevel: info
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        namespace: otel
+    
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+      zpages:
+        endpoint: 0.0.0.0:55679
+    
+    service:
+      extensions: [health_check, zpages]
+      pipelines:
+        traces:
+          receivers: [otlp, jaeger, zipkin]
+          processors: [memory_limiter, resourcedetection, attributes, batch]
+          exporters: [jaeger, logging]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, resourcedetection, attributes, batch]
+          exporters: [prometheus, logging]
+      telemetry:
+        logs:
+          level: "info"
+        metrics:
+          address: 0.0.0.0:8888

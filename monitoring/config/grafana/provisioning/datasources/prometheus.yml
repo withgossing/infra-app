@@ -1,0 +1,27 @@
+apiVersion: 1
+
+datasources:
+  # Prometheus 데이터소스
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    basicAuth: false
+    editable: true
+    jsonData:
+      timeInterval: "15s"
+      httpMethod: "POST"
+      manageAlerts: true
+      alertmanagerUid: "alertmanager"
+    
+  # AlertManager 데이터소스
+  - name: Alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    uid: "alertmanager"
+    basicAuth: false
+    editable: true
+    jsonData:
+      implementation: "prometheus"

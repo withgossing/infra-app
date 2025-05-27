@@ -1,0 +1,336 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka-ui
+    app.kubernetes.io/component: ui
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: kafka-ui
+    app.kubernetes.io/component: ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30703
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-ui
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka-ui
+    app.kubernetes.io/component: ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-ui
+      app.kubernetes.io/component: ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-ui
+        app.kubernetes.io/component: ui
+    spec:
+      serviceAccountName: kafka-ui
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: kafka-ui
+          image: provectuslabs/kafka-ui:v0.7.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            - name: KAFKA_CLUSTERS_0_NAME
+              value: "k8s-cluster"
+            - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+              value: "kafka-headless.messaging.svc.cluster.local:9092"
+            - name: KAFKA_CLUSTERS_0_SCHEMAREGISTRY
+              value: "http://schema-registry.messaging.svc.cluster.local:8081"
+            - name: DYNAMIC_CONFIG_ENABLED
+              value: "true"
+            - name: AUTH_TYPE
+              value: "disabled"
+            - name: SERVER_SERVLET_CONTEXT_PATH
+              value: "/"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            failureThreshold: 3
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            successThreshold: 1
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-ui
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka-ui
+    app.kubernetes.io/component: ui
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: schema-registry
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: schema-registry
+    app.kubernetes.io/component: schema-registry
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: schema-registry
+    app.kubernetes.io/component: schema-registry
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schema-registry
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: schema-registry
+    app.kubernetes.io/component: schema-registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: schema-registry
+      app.kubernetes.io/component: schema-registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: schema-registry
+        app.kubernetes.io/component: schema-registry
+    spec:
+      serviceAccountName: schema-registry
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: schema-registry
+          image: confluentinc/cp-schema-registry:7.7.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8081
+              name: http
+              protocol: TCP
+          env:
+            - name: SCHEMA_REGISTRY_HOST_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS
+              value: "kafka-headless.messaging.svc.cluster.local:9092"
+            - name: SCHEMA_REGISTRY_LISTENERS
+              value: "http://0.0.0.0:8081"
+            - name: SCHEMA_REGISTRY_KAFKASTORE_TOPIC
+              value: "_schemas"
+            - name: SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR
+              value: "3"
+            - name: SCHEMA_REGISTRY_DEBUG
+              value: "false"
+            - name: SCHEMA_REGISTRY_HEAP_OPTS
+              value: "-Xms256m -Xmx512m"
+          readinessProbe:
+            httpGet:
+              path: /subjects
+              port: 8081
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /subjects
+              port: 8081
+            failureThreshold: 3
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            successThreshold: 1
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: schema-registry
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: schema-registry
+    app.kubernetes.io/component: schema-registry
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-connect
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/component: connect
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/component: connect
+  ports:
+    - name: http
+      port: 8083
+      targetPort: 8083
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-connect
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/component: connect
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-connect
+      app.kubernetes.io/component: connect
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-connect
+        app.kubernetes.io/component: connect
+    spec:
+      serviceAccountName: kafka-connect
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: kafka-connect
+          image: confluentinc/cp-kafka-connect:7.7.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8083
+              name: http
+              protocol: TCP
+          env:
+            - name: CONNECT_BOOTSTRAP_SERVERS
+              value: "kafka-headless.messaging.svc.cluster.local:9092"
+            - name: CONNECT_REST_ADVERTISED_HOST_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CONNECT_REST_PORT
+              value: "8083"
+            - name: CONNECT_GROUP_ID
+              value: "k8s-connect-cluster"
+            - name: CONNECT_CONFIG_STORAGE_TOPIC
+              value: "k8s-connect-configs"
+            - name: CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR
+              value: "3"
+            - name: CONNECT_OFFSET_FLUSH_INTERVAL_MS
+              value: "10000"
+            - name: CONNECT_OFFSET_STORAGE_TOPIC
+              value: "k8s-connect-offsets"
+            - name: CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR
+              value: "3"
+            - name: CONNECT_STATUS_STORAGE_TOPIC
+              value: "k8s-connect-status"
+            - name: CONNECT_STATUS_STORAGE_REPLICATION_FACTOR
+              value: "3"
+            - name: CONNECT_KEY_CONVERTER
+              value: "org.apache.kafka.connect.storage.StringConverter"
+            - name: CONNECT_VALUE_CONVERTER
+              value: "io.confluent.connect.avro.AvroConverter"
+            - name: CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL
+              value: "http://schema-registry.messaging.svc.cluster.local:8081"
+            - name: CONNECT_PLUGIN_PATH
+              value: "/usr/share/java,/usr/share/confluent-hub-components"
+            - name: CONNECT_LOG4J_LOGGERS
+              value: "org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR"
+            - name: CONNECT_HEAP_OPTS
+              value: "-Xms256m -Xmx512m"
+          readinessProbe:
+            httpGet:
+              path: /connectors
+              port: 8083
+            failureThreshold: 3
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /connectors
+              port: 8083
+            failureThreshold: 3
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            successThreshold: 1
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-connect
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/component: connect

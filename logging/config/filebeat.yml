@@ -1,0 +1,90 @@
+# Filebeat 설정
+filebeat.inputs:
+# 컨테이너 로그 수집
+- type: container
+  paths:
+    - '/var/lib/docker/containers/*/*.log'
+  processors:
+    - add_docker_metadata:
+        host: "unix:///var/run/docker.sock"
+    - decode_json_fields:
+        fields: ["message"]
+        target: ""
+        overwrite_keys: true
+    - drop_fields:
+        fields: ["host", "agent", "ecs", "input"]
+
+# 시스템 로그 수집
+- type: log
+  enabled: true
+  paths:
+    - /var/log/*.log
+    - /var/log/messages
+    - /var/log/syslog
+  exclude_files: ['\.gz$']
+  multiline.pattern: '^\d{4}-\d{2}-\d{2}'
+  multiline.negate: true
+  multiline.match: after
+
+# Kong 로그 수집 (별도 설정 시)
+- type: log
+  enabled: false
+  paths:
+    - /var/log/kong/*.log
+  json.keys_under_root: true
+  json.add_error_key: true
+  fields:
+    service: kong
+    environment: development
+
+# 애플리케이션 로그 수집
+- type: log
+  enabled: false
+  paths:
+    - /app/logs/*.log
+  multiline.pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+  multiline.negate: true
+  multiline.match: after
+  fields:
+    logtype: application
+
+# 프로세서 설정
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_docker_metadata: ~
+  - add_kubernetes_metadata: ~
+
+# 출력 설정
+output.logstash:
+  hosts: ["logstash:5044"]
+  compression_level: 3
+  bulk_max_size: 2048
+  template.name: "filebeat"
+  template.pattern: "filebeat-*"
+
+# 백업 출력 (Logstash 실패 시)
+# output.elasticsearch:
+#   hosts: ["elasticsearch:9200"]
+#   index: "filebeat-%{+yyyy.MM.dd}"
+
+# 로깅 설정
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /usr/share/filebeat/logs
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644
+
+# 모니터링 설정
+monitoring.enabled: false
+
+# 일반 설정
+name: filebeat-docker
+tags: ["service", "logging", "filebeat"]
+
+# 성능 설정
+queue.mem.events: 4096
+queue.mem.flush.min_events: 2048
+queue.mem.flush.timeout: 1s

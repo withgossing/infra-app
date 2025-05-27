@@ -1,0 +1,239 @@
+groups:
+  # 인프라스트럭처 알림
+  - name: infrastructure.rules
+    interval: 30s
+    rules:
+    
+    # 인스턴스 다운 알림
+    - alert: InstanceDown
+      expr: up == 0
+      for: 1m
+      labels:
+        severity: critical
+        category: infrastructure
+      annotations:
+        summary: "인스턴스 {{ $labels.instance }}가 다운되었습니다"
+        description: "{{ $labels.job }}의 {{ $labels.instance }}가 1분 이상 다운 상태입니다."
+        
+    # 높은 CPU 사용량 알림
+    - alert: HighCPUUsage
+      expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+      for: 5m
+      labels:
+        severity: warning
+        category: infrastructure
+      annotations:
+        summary: "높은 CPU 사용량 감지: {{ $labels.instance }}"
+        description: "{{ $labels.instance }}의 CPU 사용량이 5분간 80%를 초과했습니다. (현재: {{ $value }}%)"
+        
+    # 높은 메모리 사용량 알림
+    - alert: HighMemoryUsage
+      expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+        category: infrastructure
+      annotations:
+        summary: "높은 메모리 사용량 감지: {{ $labels.instance }}"
+        description: "{{ $labels.instance }}의 메모리 사용량이 5분간 85%를 초과했습니다. (현재: {{ $value }}%)"
+        
+    # 디스크 공간 부족 알림
+    - alert: DiskSpaceLow
+      expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+        category: infrastructure
+      annotations:
+        summary: "디스크 공간 부족: {{ $labels.instance }}"
+        description: "{{ $labels.instance }}의 {{ $labels.mountpoint }} 디스크 사용량이 85%를 초과했습니다. (현재: {{ $value }}%)"
+        
+    # 디스크 공간 임계 상황
+    - alert: DiskSpaceCritical
+      expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 95
+      for: 1m
+      labels:
+        severity: critical
+        category: infrastructure
+      annotations:
+        summary: "디스크 공간 임계 상황: {{ $labels.instance }}"
+        description: "{{ $labels.instance }}의 {{ $labels.mountpoint }} 디스크 사용량이 95%를 초과했습니다. (현재: {{ $value }}%) 즉시 조치가 필요합니다."
+
+  # 애플리케이션 알림
+  - name: application.rules
+    interval: 30s
+    rules:
+    
+    # 높은 HTTP 응답 시간
+    - alert: HighHTTPResponseTime
+      expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job, instance)) > 1
+      for: 5m
+      labels:
+        severity: warning
+        category: application
+      annotations:
+        summary: "높은 HTTP 응답 시간: {{ $labels.instance }}"
+        description: "{{ $labels.instance }}의 95% HTTP 응답 시간이 5분간 1초를 초과했습니다. (현재: {{ $value }}초)"
+        
+    # 높은 HTTP 에러율
+    - alert: HighHTTPErrorRate
+      expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) * 100 > 5
+      for: 5m
+      labels:
+        severity: warning
+        category: application
+      annotations:
+        summary: "높은 HTTP 에러율: {{ $labels.instance }}"
+        description: "{{ $labels.instance }}의 HTTP 5xx 에러율이 5분간 5%를 초과했습니다. (현재: {{ $value }}%)"
+        
+    # JVM 힙 메모리 사용량 높음
+    - alert: HighJVMHeapUsage
+      expr: jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+        category: application
+      annotations:
+        summary: "높은 JVM 힙 메모리 사용량: {{ $labels.instance }}"
+        description: "{{ $labels.instance }}의 JVM 힙 메모리 사용량이 85%를 초과했습니다. (현재: {{ $value }}%)"
+
+  # 데이터베이스 알림
+  - name: database.rules
+    interval: 30s
+    rules:
+    
+    # PostgreSQL 연결 수 높음
+    - alert: PostgreSQLHighConnections
+      expr: pg_stat_database_numbackends / pg_settings_max_connections * 100 > 80
+      for: 5m
+      labels:
+        severity: warning
+        category: database
+      annotations:
+        summary: "PostgreSQL 연결 수 높음: {{ $labels.instance }}"
+        description: "{{ $labels.instance }}의 PostgreSQL 연결 수가 80%를 초과했습니다. (현재: {{ $value }}%)"
+        
+    # Redis 메모리 사용량 높음
+    - alert: RedisHighMemoryUsage
+      expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+        category: database
+      annotations:
+        summary: "Redis 메모리 사용량 높음: {{ $labels.instance }}"
+        description: "{{ $labels.instance }}의 Redis 메모리 사용량이 85%를 초과했습니다. (현재: {{ $value }}%)"
+        
+    # Redis 마스터 연결 끊김
+    - alert: RedisMasterDown
+      expr: redis_master_link_up == 0
+      for: 1m
+      labels:
+        severity: critical
+        category: database
+      annotations:
+        summary: "Redis 마스터 연결 끊김: {{ $labels.instance }}"
+        description: "{{ $labels.instance }}의 Redis 복제본이 마스터와의 연결을 잃었습니다."
+
+  # 컨테이너 알림
+  - name: container.rules
+    interval: 30s
+    rules:
+    
+    # 컨테이너 재시작 빈발
+    - alert: ContainerFrequentRestarts
+      expr: increase(container_start_time_seconds[1h]) > 5
+      for: 5m
+      labels:
+        severity: warning
+        category: container
+      annotations:
+        summary: "컨테이너 재시작 빈발: {{ $labels.name }}"
+        description: "컨테이너 {{ $labels.name }}이 지난 1시간 동안 5회 이상 재시작했습니다."
+        
+    # 컨테이너 CPU 사용량 높음
+    - alert: ContainerHighCPU
+      expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+      for: 5m
+      labels:
+        severity: warning
+        category: container
+      annotations:
+        summary: "컨테이너 CPU 사용량 높음: {{ $labels.name }}"
+        description: "컨테이너 {{ $labels.name }}의 CPU 사용량이 5분간 80%를 초과했습니다. (현재: {{ $value }}%)"
+        
+    # 컨테이너 메모리 사용량 높음
+    - alert: ContainerHighMemory
+      expr: container_memory_usage_bytes / container_spec_memory_limit_bytes * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+        category: container
+      annotations:
+        summary: "컨테이너 메모리 사용량 높음: {{ $labels.name }}"
+        description: "컨테이너 {{ $labels.name }}의 메모리 사용량이 5분간 85%를 초과했습니다. (현재: {{ $value }}%)"
+
+  # API Gateway 알림
+  - name: kong.rules
+    interval: 30s
+    rules:
+    
+    # Kong 서비스 응답 시간 높음
+    - alert: KongHighLatency
+      expr: histogram_quantile(0.95, sum(rate(kong_latency_bucket[5m])) by (le, service)) > 1000
+      for: 5m
+      labels:
+        severity: warning
+        category: gateway
+      annotations:
+        summary: "Kong 서비스 응답 시간 높음: {{ $labels.service }}"
+        description: "Kong 서비스 {{ $labels.service }}의 95% 응답 시간이 1초를 초과했습니다. (현재: {{ $value }}ms)"
+        
+    # Kong 높은 에러율
+    - alert: KongHighErrorRate
+      expr: rate(kong_http_status{code=~"5.."}[5m]) / rate(kong_http_status[5m]) * 100 > 5
+      for: 5m
+      labels:
+        severity: warning
+        category: gateway
+      annotations:
+        summary: "Kong 높은 에러율"
+        description: "Kong의 5xx 에러율이 5분간 5%를 초과했습니다. (현재: {{ $value }}%)"
+
+  # 모니터링 시스템 알림
+  - name: monitoring.rules
+    interval: 30s
+    rules:
+    
+    # Prometheus 대상 다운
+    - alert: PrometheusTargetDown
+      expr: up == 0
+      for: 5m
+      labels:
+        severity: warning
+        category: monitoring
+      annotations:
+        summary: "Prometheus 대상 다운: {{ $labels.job }}"
+        description: "Prometheus 대상 {{ $labels.job }}의 {{ $labels.instance }}가 5분간 다운 상태입니다."
+        
+    # Prometheus 설정 재로드 실패
+    - alert: PrometheusConfigReloadFailed
+      expr: prometheus_config_last_reload_successful == 0
+      for: 5m
+      labels:
+        severity: warning
+        category: monitoring
+      annotations:
+        summary: "Prometheus 설정 재로드 실패"
+        description: "Prometheus 설정 파일 재로드가 실패했습니다. 설정을 확인해주세요."
+        
+    # AlertManager 클러스터 down
+    - alert: AlertManagerDown
+      expr: up{job="alertmanager"} == 0
+      for: 5m
+      labels:
+        severity: critical
+        category: monitoring
+      annotations:
+        summary: "AlertManager 다운"
+        description: "AlertManager 인스턴스가 5분간 다운 상태입니다. 알림이 전송되지 않을 수 있습니다."

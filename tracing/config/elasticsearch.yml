@@ -1,0 +1,47 @@
+cluster.name: "jaeger-cluster"
+node.name: "jaeger-elasticsearch-node-1"
+
+# 네트워크 설정
+network.host: 0.0.0.0
+http.port: 9200
+transport.port: 9300
+
+# 디스커버리 설정
+discovery.type: single-node
+cluster.initial_master_nodes: ["jaeger-elasticsearch-node-1"]
+
+# 보안 설정 비활성화 (개발 환경용)
+xpack.security.enabled: false
+xpack.security.enrollment.enabled: false
+xpack.security.http.ssl.enabled: false
+xpack.security.transport.ssl.enabled: false
+
+# 메모리 설정
+bootstrap.memory_lock: true
+indices.memory.index_buffer_size: 30%
+
+# 로깅 설정
+logger.org.elasticsearch.discovery: WARN
+logger.org.elasticsearch.cluster.service: WARN
+
+# 인덱스 설정 (Jaeger용 최적화)
+action.auto_create_index: "+jaeger-*"
+action.destructive_requires_name: true
+
+# Jaeger 인덱스 템플릿 설정
+# (자동으로 생성되지만 수동으로도 설정 가능)
+indices.lifecycle.rollover.only_if_has_documents: false
+
+# 성능 최적화 (Jaeger 트레이스용)
+thread_pool.write.queue_size: 2000
+thread_pool.search.queue_size: 2000
+
+# 클러스터 설정
+cluster.routing.allocation.disk.threshold.enabled: true
+cluster.routing.allocation.disk.watermark.flood_stage: 95%
+cluster.routing.allocation.disk.watermark.high: 90%
+cluster.routing.allocation.disk.watermark.low: 85%
+
+# 검색 설정 (대용량 트레이스 처리)
+search.max_buckets: 100000
+indices.query.bool.max_clause_count: 10240

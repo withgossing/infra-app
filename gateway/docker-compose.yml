@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  kong-database:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: kong
+      POSTGRES_DB: kong
+      POSTGRES_PASSWORD: kong_password
+    volumes:
+      - kong_data:/var/lib/postgresql/data
+    networks:
+      - kong-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kong"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  kong-migrations:
+    image: kong:3.7-alpine
+    command: kong migrations bootstrap
+    depends_on:
+      kong-database:
+        condition: service_healthy
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-database
+      KONG_PG_PORT: 5432
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong_password
+      KONG_PG_DATABASE: kong
+    networks:
+      - kong-net
+    restart: "no"
+
+  kong:
+    image: kong:3.7-alpine
+    restart: always
+    depends_on:
+      kong-database:
+        condition: service_healthy
+      kong-migrations:
+        condition: service_completed_successfully
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-database
+      KONG_PG_PORT: 5432
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong_password
+      KONG_PG_DATABASE: kong
+      
+      # Kong 설정
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      
+      # 리스너 설정
+      KONG_PROXY_LISTEN: 0.0.0.0:8000, 0.0.0.0:8443 ssl
+      KONG_ADMIN_LISTEN: 127.0.0.1:8001, 127.0.0.1:8444 ssl
+      
+      # 플러그인 설정
+      KONG_PLUGINS: bundled
+      
+      # 보안 설정
+      KONG_TRUSTED_IPS: 0.0.0.0/0,::/0
+      KONG_REAL_IP_HEADER: X-Forwarded-For
+      KONG_REAL_IP_RECURSIVE: "on"
+      
+      # 성능 설정
+      KONG_WORKER_PROCESSES: auto
+      KONG_NGINX_WORKER_PROCESSES: auto
+    ports:
+      - "10000:8000"   # HTTP Gateway
+      - "10001:8443"   # HTTPS Gateway
+      - "8001:8001"    # Admin API HTTP (로컬만)
+      - "8444:8444"    # Admin API HTTPS (로컬만)
+    volumes:
+      - ./config:/opt/kong/config
+    networks:
+      - kong-net
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  kong_data:
+
+networks:
+  kong-net:
+    driver: bridge

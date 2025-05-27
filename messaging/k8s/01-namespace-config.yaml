@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: messaging
+  labels:
+    name: messaging
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: messaging
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-config
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: configuration
+data:
+  server.properties: |
+    # KRaft 모드 서버 설정
+    process.roles=broker,controller
+    
+    # 컨트롤러 쿼럼 설정 (StatefulSet을 위한 DNS 기반)
+    controller.quorum.voters=0@kafka-0.kafka-headless.messaging.svc.cluster.local:29093,1@kafka-1.kafka-headless.messaging.svc.cluster.local:29093,2@kafka-2.kafka-headless.messaging.svc.cluster.local:29093
+    
+    # 리스너 설정
+    listeners=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093
+    inter.broker.listener.name=PLAINTEXT
+    controller.listener.names=CONTROLLER
+    listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+    
+    # 로그 디렉토리
+    log.dirs=/var/lib/kafka/data
+    
+    # 기본 파티션 및 복제 설정
+    num.partitions=3
+    default.replication.factor=3
+    min.insync.replicas=2
+    offsets.topic.replication.factor=3
+    transaction.state.log.replication.factor=3
+    transaction.state.log.min.isr=2
+    
+    # 로그 보존 정책
+    log.retention.hours=168
+    log.retention.bytes=1073741824
+    log.segment.bytes=1073741824
+    log.retention.check.interval.ms=300000
+    
+    # 플러시 정책
+    log.flush.interval.messages=10000
+    log.flush.interval.ms=1000
+    
+    # 그룹 코디네이터
+    group.initial.rebalance.delay.ms=0
+    
+    # 압축
+    compression.type=lz4
+    
+    # 소켓 설정
+    socket.send.buffer.bytes=102400
+    socket.receive.buffer.bytes=102400
+    socket.request.max.bytes=104857600
+    
+    # 스레드 설정
+    num.network.threads=3
+    num.io.threads=8
+    num.replica.fetchers=1
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-scripts
+  namespace: messaging
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: scripts
+data:
+  setup.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "=== Kafka 클러스터 설정 스크립트 ==="
+    
+    # 클러스터 ID 생성 또는 기존 ID 사용
+    CLUSTER_ID_FILE="/var/lib/kafka/data/meta.properties"
+    
+    if [ -f "$CLUSTER_ID_FILE" ]; then
+        echo "기존 클러스터 ID 발견, 재사용합니다."
+        CLUSTER_ID=$(grep "cluster.id=" $CLUSTER_ID_FILE | cut -d'=' -f2)
+    else
+        echo "새로운 클러스터 ID 생성 중..."
+        CLUSTER_ID=$(kafka-storage.sh random-uuid)
+        echo "생성된 클러스터 ID: $CLUSTER_ID"
+    fi
+    
+    # 노드 ID 설정 (Pod 이름에서 추출)
+    NODE_ID=${HOSTNAME##*-}
+    echo "노드 ID: $NODE_ID"
+    
+    # 설정 파일에 노드 ID 추가
+    echo "node.id=$NODE_ID" >> /opt/kafka/config/kraft/server.properties
+    
+    # advertised.listeners 설정
+    echo "advertised.listeners=PLAINTEXT://${HOSTNAME}.kafka-headless.messaging.svc.cluster.local:9092" >> /opt/kafka/config/kraft/server.properties
+    
+    # 스토리지 포맷 (필요한 경우에만)
+    if [ ! -f "$CLUSTER_ID_FILE" ]; then
+        echo "스토리지 포맷 중..."
+        kafka-storage.sh format -t $CLUSTER_ID -c /opt/kafka/config/kraft/server.properties --ignore-formatted
+    fi
+    
+    echo "설정 완료!"
+    
+  health-check.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Kafka 브로커 API 버전 확인
+    kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1
+    
+    if [ $? -eq 0 ]; then
+        echo "Kafka 브로커가 정상적으로 실행 중입니다."
+        exit 0
+    else
+        echo "Kafka 브로커에 연결할 수 없습니다."
+        exit 1
+    fi
+    
+  create-topics.sh: |
+    #!/bin/bash
+    set -e
+    
+    # 기본 토픽들 생성
+    BOOTSTRAP_SERVERS="kafka-0.kafka-headless.messaging.svc.cluster.local:9092,kafka-1.kafka-headless.messaging.svc.cluster.local:9092,kafka-2.kafka-headless.messaging.svc.cluster.local:9092"
+    
+    echo "=== 기본 토픽 생성 중 ==="
+    
+    # 테스트 토픽
+    kafka-topics.sh --create \
+      --bootstrap-server $BOOTSTRAP_SERVERS \
+      --topic test-topic \
+      --partitions 3 \
+      --replication-factor 3 \
+      --if-not-exists
+    
+    # 이벤트 토픽
+    kafka-topics.sh --create \
+      --bootstrap-server $BOOTSTRAP_SERVERS \
+      --topic events \
+      --partitions 6 \
+      --replication-factor 3 \
+      --if-not-exists
+    
+    # 로그 토픽
+    kafka-topics.sh --create \
+      --bootstrap-server $BOOTSTRAP_SERVERS \
+      --topic application-logs \
+      --partitions 3 \
+      --replication-factor 3 \
+      --config retention.ms=604800000 \
+      --if-not-exists
+    
+    echo "기본 토픽 생성 완료!"
+    
+    # 토픽 목록 조회
+    echo "=== 생성된 토픽 목록 ==="
+    kafka-topics.sh --list --bootstrap-server $BOOTSTRAP_SERVERS

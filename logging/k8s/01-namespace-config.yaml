@@ -1,0 +1,192 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+  labels:
+    name: logging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elasticsearch-config
+  namespace: logging
+data:
+  elasticsearch.yml: |
+    cluster.name: "k8s-logging-cluster"
+    node.name: "${HOSTNAME}"
+    network.host: 0.0.0.0
+    http.port: 9200
+    transport.port: 9300
+    
+    discovery.seed_hosts: ["elasticsearch-0.elasticsearch-headless.logging.svc.cluster.local"]
+    cluster.initial_master_nodes: ["elasticsearch-0"]
+    
+    xpack.security.enabled: false
+    xpack.security.enrollment.enabled: false
+    xpack.security.http.ssl.enabled: false
+    xpack.security.transport.ssl.enabled: false
+    
+    bootstrap.memory_lock: true
+    indices.memory.index_buffer_size: 30%
+    
+    action.auto_create_index: "+*"
+    action.destructive_requires_name: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: logging
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    http.port: 9600
+    pipeline.workers: 4
+    pipeline.batch.size: 125
+    pipeline.batch.delay: 50
+    config.reload.automatic: true
+    config.reload.interval: 3s
+    log.level: info
+    monitoring.enabled: false
+    dead_letter_queue.enable: true
+    dead_letter_queue.max_bytes: 1024mb
+    xpack.monitoring.enabled: false
+  
+  pipelines.yml: |
+    - pipeline.id: main
+      path.config: "/usr/share/logstash/pipeline/main.conf"
+      pipeline.workers: 2
+    - pipeline.id: k8s
+      path.config: "/usr/share/logstash/pipeline/k8s.conf"
+      pipeline.workers: 2
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-pipeline
+  namespace: logging
+data:
+  main.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+    }
+    
+    filter {
+      if [@metadata][beat] == "filebeat" {
+        if [kubernetes] {
+          mutate {
+            add_field => { "[@metadata][target_index]" => "k8s-logs-%{+YYYY.MM.dd}" }
+          }
+          
+          if [kubernetes][container][name] {
+            mutate {
+              add_field => { "container_name" => "%{[kubernetes][container][name]}" }
+            }
+          }
+          
+          if [kubernetes][namespace] {
+            mutate {
+              add_field => { "namespace" => "%{[kubernetes][namespace]}" }
+            }
+          }
+        } else {
+          mutate {
+            add_field => { "[@metadata][target_index]" => "system-logs-%{+YYYY.MM.dd}" }
+          }
+        }
+      }
+      
+      if [message] =~ /^\{.*\}$/ {
+        json {
+          source => "message"
+          tag_on_failure => ["_jsonparsefailure"]
+        }
+      }
+      
+      mutate {
+        remove_field => [ "@version", "ecs", "host", "agent" ]
+      }
+    }
+    
+    output {
+      elasticsearch {
+        hosts => ["elasticsearch:9200"]
+        index => "%{[@metadata][target_index]}"
+      }
+    }
+  
+  k8s.conf: |
+    input {
+      tcp {
+        port => 5000
+        codec => json_lines
+        tags => ["k8s_app"]
+      }
+    }
+    
+    filter {
+      if "k8s_app" in [tags] {
+        mutate {
+          add_field => { "[@metadata][target_index]" => "k8s-app-logs-%{+YYYY.MM.dd}" }
+        }
+      }
+    }
+    
+    output {
+      elasticsearch {
+        hosts => ["elasticsearch:9200"]
+        index => "%{[@metadata][target_index]}"
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kibana-config
+  namespace: logging
+data:
+  kibana.yml: |
+    server.port: 5601
+    server.host: "0.0.0.0"
+    server.name: "kibana"
+    elasticsearch.hosts: ["http://elasticsearch:9200"]
+    elasticsearch.requestTimeout: 90000
+    elasticsearch.shardTimeout: 30000
+    xpack.security.enabled: false
+    xpack.encryptedSavedObjects.encryptionKey: "a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d"
+    i18n.locale: "ko"
+    monitoring.ui.container.elasticsearch.enabled: true
+    monitoring.ui.container.logstash.enabled: true
+    newsfeed.enabled: false
+    telemetry.enabled: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: logging
+data:
+  filebeat.yml: |
+    filebeat.inputs:
+    - type: container
+      paths:
+        - '/var/log/containers/*.log'
+      processors:
+        - add_kubernetes_metadata:
+            host: ${NODE_NAME}
+            matchers:
+            - logs_path:
+                logs_path: "/var/log/containers/"
+    
+    processors:
+      - add_host_metadata:
+          when.not.contains.tags: forwarded
+    
+    output.logstash:
+      hosts: ["logstash:5044"]
+    
+    logging.level: info
+    name: filebeat-k8s
+    tags: ["kubernetes", "filebeat"]

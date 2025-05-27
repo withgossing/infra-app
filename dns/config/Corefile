@@ -1,0 +1,65 @@
+# CoreDNS 메인 설정
+. {
+    # 에러 로깅
+    errors
+    
+    # 헬스체크 엔드포인트
+    health {
+        lameduck 5s
+    }
+    
+    # 프로메테우스 메트릭
+    prometheus :9153
+    
+    # 로그
+    log
+    
+    # 캐시 (30초 TTL)
+    cache 30
+    
+    # 로드밸런싱 (라운드로빈)
+    loadbalance
+    
+    # 외부 DNS 서버로 포워딩
+    forward . 8.8.8.8 8.8.4.4 {
+        prefer_udp
+    }
+}
+
+# 내부 도메인 처리 (.local)
+local {
+    errors
+    file /etc/coredns/custom-domains.db
+    log
+}
+
+# 개발 환경 도메인 처리 (.dev)
+dev {
+    errors
+    file /etc/coredns/dev-domains.db
+    log
+}
+
+# 캐시 도메인 (.cache.local)
+cache.local {
+    errors
+    template IN A cache.local {
+        answer "{{ .Name }} 60 IN A 127.0.0.1"
+    }
+    log
+}
+
+# 모니터링 도메인 (.monitoring.local)
+monitoring.local {
+    errors
+    template IN A monitoring.local {
+        answer "{{ .Name }} 60 IN A 127.0.0.1"
+    }
+    template IN A prometheus.monitoring.local {
+        answer "{{ .Name }} 60 IN A 127.0.0.1"
+    }
+    template IN A grafana.monitoring.local {
+        answer "{{ .Name }} 60 IN A 127.0.0.1"
+    }
+    log
+}

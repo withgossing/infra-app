@@ -1,0 +1,51 @@
+# Kibana 서버 설정
+server.port: 5601
+server.host: "0.0.0.0"
+server.name: "kibana"
+server.publicBaseUrl: "http://localhost:10003"
+
+# Elasticsearch 연결 설정
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+elasticsearch.requestTimeout: 90000
+elasticsearch.shardTimeout: 30000
+
+# 보안 설정 (개발 환경용)
+xpack.security.enabled: false
+xpack.encryptedSavedObjects.encryptionKey: "a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d"
+
+# 로깅 설정
+logging.appenders.file:
+  type: file
+  fileName: /usr/share/kibana/logs/kibana.log
+  layout:
+    type: json
+
+logging.root:
+  appenders: [default, file]
+  level: info
+
+# UI 설정
+i18n.locale: "ko"
+map.includeElasticMapsService: false
+
+# 모니터링 설정
+monitoring.ui.container.elasticsearch.enabled: true
+monitoring.ui.container.logstash.enabled: true
+
+# 고급 설정
+newsfeed.enabled: false
+telemetry.enabled: false
+telemetry.optIn: false
+
+# 시각화 설정
+visualization.colorMapping.enabled: true
+vis_type_vega.enableExternalUrls: true
+
+# 데이터 설정
+data.search.timeout: 600000
+
+# 저장된 객체 설정
+savedObjects.maxImportPayloadBytes: 26214400
+
+# 보고서 설정
+xpack.reporting.enabled: false

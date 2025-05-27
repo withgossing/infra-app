@@ -1,0 +1,51 @@
+{
+  "dependencies": {
+    "dagMaxNumServices": 200,
+    "menuEnabled": true
+  },
+  "archiveEnabled": true,
+  "tracking": {
+    "gaID": "",
+    "trackErrors": true
+  },
+  "menu": [
+    {
+      "label": "About Jaeger",
+      "items": [
+        {
+          "label": "Documentation",
+          "url": "https://www.jaegertracing.io/docs/latest"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/jaegertracing/jaeger"
+        },
+        {
+          "label": "Twitter",
+          "url": "https://twitter.com/JaegerTracing"
+        }
+      ]
+    }
+  ],
+  "search": {
+    "maxLookback": {
+      "label": "2 Days",
+      "value": "2d"
+    }
+  },
+  "scripts": [],
+  "linkPatterns": [
+    {
+      "type": "logs",
+      "key": "customer_id",
+      "url": "http://localhost:10003/app/discover#/?_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-1h,to:now))&_a=(query:(query_string:(analyze_wildcard:!t,query:'customer_id:#{customer_id}')))",
+      "text": "View customer logs"
+    },
+    {
+      "type": "logs", 
+      "key": "trace_id",
+      "url": "http://localhost:10003/app/discover#/?_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-1h,to:now))&_a=(query:(query_string:(analyze_wildcard:!t,query:'trace_id:#{trace_id}')))",
+      "text": "View trace logs"
+    }
+  ]
+}

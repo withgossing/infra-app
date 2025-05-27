@@ -1,0 +1,153 @@
+receivers:
+  # OTLP 수신자 (gRPC 및 HTTP)
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - http://localhost:3000
+            - http://localhost:8080
+          allowed_headers:
+            - "*"
+
+  # Jaeger 수신자 (기존 Jaeger 클라이언트와 호환)
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:14250
+      thrift_http:
+        endpoint: 0.0.0.0:14268
+      thrift_compact:
+        endpoint: 0.0.0.0:6831
+      thrift_binary:
+        endpoint: 0.0.0.0:6832
+
+  # Zipkin 수신자 (Zipkin 클라이언트와 호환)
+  zipkin:
+    endpoint: 0.0.0.0:9411
+
+  # Prometheus 메트릭 수신자
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          scrape_interval: 10s
+          static_configs:
+            - targets: ['localhost:8888']
+
+processors:
+  # 배치 처리 (성능 최적화)
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # 메모리 제한
+  memory_limiter:
+    limit_mib: 512
+    spike_limit_mib: 128
+    check_interval: 5s
+
+  # 리소스 감지 및 속성 추가
+  resourcedetection:
+    detectors: [env, system, docker]
+    timeout: 5s
+    override: false
+
+  # 속성 추가/수정
+  attributes:
+    actions:
+      - key: environment
+        value: development
+        action: insert
+      - key: cluster
+        value: local
+        action: insert
+
+  # 샘플링 (대용량 트래픽 처리)
+  probabilistic_sampler:
+    sampling_percentage: 100  # 개발 환경에서는 100%
+
+  # 스팬 메트릭 생성
+  spanmetrics:
+    metrics_exporter: prometheus
+    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
+    dimensions:
+      - name: http.method
+        default: GET
+      - name: http.status_code
+
+exporters:
+  # Jaeger 내보내기
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+
+  # Elasticsearch 직접 내보내기 (백업)
+  elasticsearch:
+    endpoints: ["http://elasticsearch:9200"]
+    index: jaeger-traces
+    mapping:
+      mode: "ecs"
+
+  # Prometheus 메트릭 내보내기
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: otel
+    const_labels:
+      service: otel-collector
+
+  # 로깅 내보내기 (디버깅용)
+  logging:
+    loglevel: info
+
+  # OTLP HTTP 내보내기 (다른 OTEL 수집기로)
+  otlphttp:
+    endpoint: "http://jaeger:14268/api/traces"
+    tls:
+      insecure: true
+
+extensions:
+  # 헬스체크 확장
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  # pprof 확장 (성능 프로파일링)
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+  # zpages 확장 (진단 페이지)
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, pprof, zpages]
+  
+  pipelines:
+    # 트레이스 파이프라인
+    traces:
+      receivers: [otlp, jaeger, zipkin]
+      processors: [memory_limiter, resourcedetection, attributes, batch, probabilistic_sampler]
+      exporters: [jaeger, logging]
+
+    # 메트릭 파이프라인  
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, resourcedetection, attributes, batch]
+      exporters: [prometheus, logging]
+
+    # 스팬에서 메트릭 생성 파이프라인
+    traces/spanmetrics:
+      receivers: [otlp, jaeger, zipkin]
+      processors: [memory_limiter, resourcedetection, spanmetrics, batch]
+      exporters: [prometheus]
+
+  telemetry:
+    logs:
+      level: "info"
+    metrics:
+      address: 0.0.0.0:8888

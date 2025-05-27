@@ -1,0 +1,25 @@
+http.host: "0.0.0.0"
+http.port: 9600
+
+# 파이프라인 설정
+pipeline.workers: 4
+pipeline.batch.size: 125
+pipeline.batch.delay: 50
+
+# JVM 설정
+config.reload.automatic: true
+config.reload.interval: 3s
+
+# 로깅 설정
+log.level: info
+path.logs: /usr/share/logstash/logs
+
+# 모니터링 설정
+monitoring.enabled: false
+
+# 데드 레터 큐 설정
+dead_letter_queue.enable: true
+dead_letter_queue.max_bytes: 1024mb
+
+# X-Pack 설정
+xpack.monitoring.enabled: false

@@ -1,0 +1,59 @@
+$ORIGIN local.
+$TTL 300
+
+; SOA 레코드
+@   IN  SOA dns.local. admin.local. (
+    2024052701  ; Serial
+    3600        ; Refresh
+    1800        ; Retry
+    604800      ; Expire
+    300         ; Minimum TTL
+)
+
+; NS 레코드
+@   IN  NS  dns.local.
+
+; DNS 서버
+dns                IN  A   127.0.0.1
+
+; 캐시 서비스 (Redis)
+redis-master       IN  A   127.0.0.1
+redis-replica-1    IN  A   127.0.0.1
+redis-replica-2    IN  A   127.0.0.1
+redis-sentinel-1   IN  A   127.0.0.1
+redis-sentinel-2   IN  A   127.0.0.1
+redis-sentinel-3   IN  A   127.0.0.1
+
+; 게이트웨이 서비스 (Kong)
+api-gateway        IN  A   127.0.0.1
+gateway-db         IN  A   127.0.0.1
+
+; 모니터링 서비스
+prometheus         IN  A   127.0.0.1
+grafana           IN  A   127.0.0.1
+alertmanager      IN  A   127.0.0.1
+
+; 로깅 서비스 (ELK)
+elasticsearch     IN  A   127.0.0.1
+logstash         IN  A   127.0.0.1
+kibana           IN  A   127.0.0.1
+filebeat         IN  A   127.0.0.1
+
+; 트레이싱 서비스 (Jaeger)
+jaeger-ui        IN  A   127.0.0.1
+jaeger-collector IN  A   127.0.0.1
+jaeger-agent     IN  A   127.0.0.1
+jaeger-query     IN  A   127.0.0.1
+
+; 서비스 디스커버리 (Consul)
+consul-server-1   IN  A   127.0.0.1
+consul-server-2   IN  A   127.0.0.1
+consul-server-3   IN  A   127.0.0.1
+consul-client     IN  A   127.0.0.1
+
+; 메시징 서비스 (Kafka)
+kafka-1          IN  A   127.0.0.1
+kafka-2          IN  A   127.0.0.1
+kafka-3          IN  A   127.0.0.1
+kafka-ui         IN  A   127.0.0.1
+schema-registry  IN  A   127.0.0.1

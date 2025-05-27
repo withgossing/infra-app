@@ -1,0 +1,85 @@
+# Harbor 설정 파일
+# 사용법: 이 파일을 harbor.yml로 복사하고 필요에 따라 수정
+
+# Harbor 기본 설정
+hostname: localhost
+http:
+  port: 80
+https:
+  port: 443
+  certificate: /etc/harbor/ssl/harbor.crt
+  private_key: /etc/harbor/ssl/harbor.key
+
+# 외부 URL (로드밸런서나 프록시 뒤에 있을 때)
+external_url: http://localhost:10800
+
+# Harbor 관리자 초기 비밀번호
+harbor_admin_password: Harbor12345
+
+# 데이터베이스 설정
+database:
+  password: postgres123
+  max_idle_conns: 100
+  max_open_conns: 900
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 0
+
+# 데이터 저장 경로
+data_volume: /data
+
+# Trivy 보안 스캐닝 설정
+trivy:
+  ignore_unfixed: false
+  skip_update: false
+  offline_scan: false
+  security_check: vuln
+  insecure: false
+
+# 작업 서비스 설정
+jobservice:
+  max_job_workers: 10
+  job_loggers:
+    - STD_OUTPUT
+    - FILE
+  logger_sweeper_duration: 1 #days
+
+# 알림 설정
+notification:
+  webhook_job_max_retry: 3
+  webhook_job_http_timeout: 3 #seconds
+
+# Chart 저장소 기능
+chart:
+  absolute_url: disabled
+
+# 로그 설정
+log:
+  level: info
+  local:
+    rotate_count: 50
+    rotate_size: 200M
+    location: /var/log/harbor
+
+# 프록시 설정 (내부 Docker daemon에서 외부 registry에 접근할 때)
+#proxy:
+#  http_proxy:
+#  https_proxy:
+#  no_proxy:
+#  components:
+#    - core
+#    - jobservice
+#    - trivy
+
+# 메트릭 설정
+metric:
+  enabled: true
+  port: 9090
+  path: /metrics
+
+# 캐시 설정
+cache:
+  enabled: true
+  expire_hours: 24
+
+# Harbor 코어 설정
+_version: 2.9.0

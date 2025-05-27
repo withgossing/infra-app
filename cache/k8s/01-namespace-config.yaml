@@ -1,0 +1,172 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redis-system
+  labels:
+    name: redis-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: redis-system
+type: Opaque
+data:
+  password: cmVkaXNfcGFzc3dvcmQ=  # redis_password (base64)
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-master-config
+  namespace: redis-system
+data:
+  redis.conf: |
+    bind 0.0.0.0
+    port 6379
+    protected-mode yes
+    requirepass redis_password
+    masterauth redis_password
+    
+    # 메모리 설정
+    maxmemory 512mb
+    maxmemory-policy allkeys-lru
+    
+    # 지속성 설정 (RDB)
+    save 900 1
+    save 300 10
+    save 60 10000
+    rdbcompression yes
+    rdbchecksum yes
+    dbfilename dump.rdb
+    dir /data
+    
+    # 지속성 설정 (AOF)
+    appendonly yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    no-appendfsync-on-rewrite no
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    
+    # 네트워크 설정
+    tcp-keepalive 300
+    timeout 0
+    
+    # 로깅 설정
+    loglevel notice
+    logfile ""
+    
+    # 클라이언트 설정
+    tcp-backlog 511
+    maxclients 10000
+    
+    # 보안 설정
+    rename-command FLUSHDB ""
+    rename-command FLUSHALL ""
+    rename-command DEBUG ""
+    rename-command CONFIG "CONFIG_67890"
+    
+    # 복제 설정
+    repl-diskless-sync no
+    repl-diskless-sync-delay 5
+    repl-ping-replica-period 10
+    repl-timeout 60
+    repl-disable-tcp-nodelay no
+    repl-backlog-size 1mb
+    repl-backlog-ttl 3600
+    replica-priority 100
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-replica-config
+  namespace: redis-system
+data:
+  redis.conf: |
+    bind 0.0.0.0
+    port 6379
+    protected-mode yes
+    requirepass redis_password
+    masterauth redis_password
+    
+    # 복제 설정
+    replicaof redis-master 6379
+    replica-serve-stale-data yes
+    replica-read-only yes
+    
+    # 메모리 설정
+    maxmemory 512mb
+    maxmemory-policy allkeys-lru
+    
+    # 지속성 설정 (RDB)
+    save 900 1
+    save 300 10
+    save 60 10000
+    rdbcompression yes
+    rdbchecksum yes
+    dbfilename dump.rdb
+    dir /data
+    
+    # 지속성 설정 (AOF)
+    appendonly yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    no-appendfsync-on-rewrite no
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    
+    # 네트워크 설정
+    tcp-keepalive 300
+    timeout 0
+    
+    # 로깅 설정
+    loglevel notice
+    logfile ""
+    
+    # 클라이언트 설정
+    tcp-backlog 511
+    maxclients 10000
+    
+    # 보안 설정
+    rename-command FLUSHDB ""
+    rename-command FLUSHALL ""
+    rename-command DEBUG ""
+    rename-command CONFIG "CONFIG_67890"
+    
+    # 복제 설정
+    repl-diskless-sync no
+    repl-diskless-sync-delay 5
+    repl-ping-replica-period 10
+    repl-timeout 60
+    repl-disable-tcp-nodelay no
+    repl-backlog-size 1mb
+    repl-backlog-ttl 3600
+    replica-priority 100
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-sentinel-config
+  namespace: redis-system
+data:
+  sentinel.conf: |
+    port 26379
+    bind 0.0.0.0
+    
+    logfile ""
+    loglevel notice
+    
+    sentinel monitor mymaster redis-master 6379 2
+    sentinel auth-pass mymaster redis_password
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel failover-timeout mymaster 10000
+    sentinel parallel-syncs mymaster 1
+    sentinel deny-scripts-reconfig yes
+    
+    requirepass redis_password
+    protected-mode no
+    
+    sentinel config-epoch mymaster 0
+    sentinel leader-epoch mymaster 0
+    sentinel resolve-hostnames no
+    sentinel announce-hostnames no

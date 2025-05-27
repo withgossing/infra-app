@@ -1,0 +1,137 @@
+# Metricbeat 설정
+metricbeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+
+# 시스템 메트릭 모듈
+metricbeat.modules:
+# 시스템 메트릭
+- module: system
+  period: 10s
+  metricsets:
+    - cpu
+    - load
+    - memory
+    - network
+    - process
+    - process_summary
+    - socket_summary
+    - filesystem
+    - fsstat
+  processes: ['.*']
+  process.include_top_n:
+    by_cpu: 5
+    by_memory: 5
+
+# Docker 메트릭
+- module: docker
+  period: 10s
+  hosts: ["unix:///var/run/docker.sock"]
+  metricsets:
+    - container
+    - cpu
+    - diskio
+    - event
+    - healthcheck
+    - info
+    - memory
+    - network
+
+# Redis 메트릭 (Redis가 실행 중일 때)
+- module: redis
+  enabled: false
+  period: 10s
+  hosts: ["redis:6379"]
+  password: "redis_password"
+
+# PostgreSQL 메트릭 (PostgreSQL이 실행 중일 때)
+- module: postgresql
+  enabled: false
+  period: 10s
+  hosts: ["postgres://user:password@postgres:5432/dbname?sslmode=disable"]
+
+# Elasticsearch 메트릭
+- module: elasticsearch
+  period: 10s
+  hosts: ["http://elasticsearch:9200"]
+  metricsets:
+    - node
+    - node_stats
+    - cluster_stats
+
+# Kibana 메트릭
+- module: kibana
+  period: 10s
+  hosts: ["http://kibana:5601"]
+  metricsets: ["status"]
+
+# Logstash 메트릭
+- module: logstash
+  period: 10s
+  hosts: ["http://logstash:9600"]
+  metricsets: ["node", "node_stats"]
+
+# HTTP 모듈 (API 엔드포인트 모니터링)
+- module: http
+  period: 30s
+  metricsets: ["json"]
+  namespace: "api_health"
+  hosts: ["http://kong:8001/status"]
+  path: "/"
+  
+# 프로세서 설정
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_docker_metadata: ~
+  - drop_fields:
+      fields: ["host.architecture", "host.os.family"]
+
+# 출력 설정
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  index: "metricbeat-%{+yyyy.MM.dd}"
+  template.name: "metricbeat"
+  template.pattern: "metricbeat-*"
+  template.settings:
+    index.number_of_shards: 1
+    index.number_of_replicas: 0
+    index.refresh_interval: "30s"
+
+# 백업 출력 (Logstash 사용 시)
+# output.logstash:
+#   hosts: ["logstash:5044"]
+
+# 로깅 설정
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /usr/share/metricbeat/logs
+  name: metricbeat
+  keepfiles: 7
+  permissions: 0644
+
+# 일반 설정
+name: metricbeat-docker
+tags: ["service", "monitoring", "metricbeat"]
+
+# 성능 설정
+queue.mem.events: 4096
+queue.mem.flush.min_events: 2048
+queue.mem.flush.timeout: 1s
+
+# 모니터링 설정
+monitoring.enabled: false
+
+# 설정 관리
+setup.template.enabled: true
+setup.template.name: "metricbeat"
+setup.template.pattern: "metricbeat-*"
+setup.template.settings:
+  index.number_of_shards: 1
+  index.number_of_replicas: 0
+
+# Kibana 대시보드 설정 (선택사항)
+# setup.dashboards.enabled: true
+# setup.kibana:
+#   host: "kibana:5601"

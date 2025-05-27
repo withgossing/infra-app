@@ -1,0 +1,274 @@
+version: '3.8'
+
+services:
+  # Harbor 로그 수집기
+  log:
+    image: goharbor/harbor-log:v2.9.0
+    container_name: harbor-log
+    restart: always
+    dns_search: .
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    volumes:
+      - /var/log/harbor/:/var/log/docker/:z
+      - type: bind
+        source: ./config/logrotate.conf
+        target: /etc/logrotate.d/docker
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    ports:
+      - "127.0.0.1:1514:10514"
+    networks:
+      - harbor
+
+  # Harbor 데이터베이스 (PostgreSQL)
+  registry-db:
+    image: goharbor/harbor-db:v2.9.0
+    container_name: harbor-db
+    restart: always
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    volumes:
+      - registry-db-data:/var/lib/postgresql/data:z
+    networks:
+      harbor:
+    dns_search: .
+    environment:
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_USER: postgres
+      POSTGRES_DB: registry
+      PGUSER: postgres
+    ports:
+      - "10801:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Harbor Redis
+  registry-redis:
+    image: goharbor/redis-photon:v2.9.0
+    container_name: harbor-redis
+    restart: always
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    volumes:
+      - registry-redis-data:/var/lib/redis
+    networks:
+      harbor:
+    dns_search: .
+    ports:
+      - "10802:6379"
+
+  # Harbor Portal (웹 UI)
+  portal:
+    image: goharbor/harbor-portal:v2.9.0
+    container_name: harbor-portal
+    restart: always
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    networks:
+      - harbor
+    dns_search: .
+    depends_on:
+      - log
+    volumes:
+      - type: bind
+        source: ./config/nginx.conf
+        target: /etc/nginx/nginx.conf
+
+  # Harbor Core
+  core:
+    image: goharbor/harbor-core:v2.9.0
+    container_name: harbor-core
+    env_file:
+      - ./config/core.env
+    restart: always
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    volumes:
+      - harbor-core-data:/data/:z
+      - ./config/core.env:/etc/core/env:z
+      - type: bind
+        source: ./config/key
+        target: /etc/core/key:z
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock:z
+    networks:
+      harbor:
+        aliases:
+          - harbor-core
+    dns_search: .
+    depends_on:
+      - log
+      - registry-db
+      - registry-redis
+    environment:
+      CORE_SECRET: core_secret_12345
+      JOBSERVICE_SECRET: jobservice_secret_12345
+
+  # Harbor JobService
+  jobservice:
+    image: goharbor/harbor-jobservice:v2.9.0
+    container_name: harbor-jobservice
+    env_file:
+      - ./config/jobservice.env
+    restart: always
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    volumes:
+      - harbor-jobservice-data:/var/log/jobs/:z
+      - type: bind
+        source: ./config/jobservice.env
+        target: /etc/jobservice/env:z
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock:z
+    networks:
+      harbor:
+        aliases:
+          - harbor-jobservice
+    dns_search: .
+    depends_on:
+      - log
+      - registry-db
+      - registry-redis
+      - core
+
+  # Docker Registry
+  registry:
+    image: goharbor/registry-photon:v2.9.0
+    container_name: harbor-registry
+    restart: always
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    volumes:
+      - registry-data:/storage:z
+      - ./config/registry/:/etc/registry/:z
+      - type: bind
+        source: ./config/custom-ca-bundle.crt
+        target: /etc/harbor/ssl/custom-ca-bundle.crt:z
+    networks:
+      - harbor
+    dns_search: .
+    depends_on:
+      - log
+    environment:
+      REGISTRY_MIDDLEWARE_CLOUDFRONT_BASEURL: disabled
+      REGISTRY_MIDDLEWARE_CLOUDFRONT_KEYPAIRID: disabled
+      REGISTRY_MIDDLEWARE_CLOUDFRONT_DURATION: disabled
+
+  # Harbor 프록시 (Nginx)
+  proxy:
+    image: goharbor/nginx-photon:v2.9.0
+    container_name: harbor-proxy
+    restart: always
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - NET_BIND_SERVICE
+      - SETGID
+      - SETUID
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:z
+    networks:
+      - harbor
+    dns_search: .
+    ports:
+      - "10800:8080"
+    depends_on:
+      - registry
+      - core
+      - portal
+      - log
+
+  # Trivy 보안 스캐너
+  trivy-adapter:
+    image: goharbor/trivy-adapter-photon:v2.9.0
+    container_name: trivy-adapter
+    restart: always
+    cap_drop:
+      - ALL
+    dns_search: .
+    volumes:
+      - trivy-data:/home/scanner/.cache/trivy
+    networks:
+      - harbor
+    depends_on:
+      - log
+      - registry-redis
+    environment:
+      SCANNER_LOG_LEVEL: info
+      SCANNER_TRIVY_CACHE_DIR: /home/scanner/.cache/trivy
+      SCANNER_TRIVY_REPORTS_DIR: /home/scanner/.cache/reports
+      SCANNER_TRIVY_DEBUG_MODE: false
+      SCANNER_TRIVY_VULN_TYPE: os,library
+      SCANNER_TRIVY_TIMEOUT: 5m0s
+      SCANNER_TRIVY_GITHUB_TOKEN: ""
+      SCANNER_TRIVY_SEVERITY: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+      SCANNER_TRIVY_IGNORE_UNFIXED: false
+      SCANNER_TRIVY_SKIP_UPDATE: false
+      SCANNER_TRIVY_OFFLINE_SCAN: false
+      SCANNER_TRIVY_SECURITY_CHECKS: vuln
+      SCANNER_TRIVY_INSECURE: false
+      SCANNER_API_SERVER_ADDR: ":8080"
+      SCANNER_REDIS_URL: redis://registry-redis:6379
+      SCANNER_STORE_REDIS_URL: redis://registry-redis:6379
+      SCANNER_JOB_QUEUE_REDIS_URL: redis://registry-redis:6379
+
+networks:
+  harbor:
+    external: false
+
+volumes:
+  registry-db-data:
+    driver: local
+  registry-redis-data:
+    driver: local
+  harbor-core-data:
+    driver: local
+  harbor-jobservice-data:
+    driver: local
+  registry-data:
+    driver: local
+  trivy-data:
+    driver: local
